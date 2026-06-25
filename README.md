@@ -4,7 +4,7 @@
 
 An autonomous execution operating system for the Google VIBE2SHIP Hackathon. Not a reminder app — a predictive Chief of Staff powered by Gemini 2.5 Flash and a 10-agent orchestration pipeline.
 
-## Demo (30-second WOW)
+## Demo 
 
 1. Open the app → Click **Launch Demo**
 2. Four commitments load: Exam (7d), Interview (5d), Hackathon (4d), Assignment (3d)
