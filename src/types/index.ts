@@ -199,9 +199,13 @@ export interface UserProfile {
   email: string;
   displayName: string;
   photoURL?: string;
+  authProvider?: "google" | "password";
   commitmentScore: number;
   onboardingComplete: boolean;
+  timezone?: string;
+  primaryGoal?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface ChatMessage {

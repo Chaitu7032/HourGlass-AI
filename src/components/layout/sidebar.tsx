@@ -14,9 +14,12 @@ import {
   Mic,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
+import { useAuth } from "@/components/auth/auth-provider";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Mission Control", icon: LayoutDashboard },
@@ -29,7 +32,14 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { sidebarOpen, setSidebarOpen, rescueModeActive, orchestration } = useHourglassStore();
+  const store = useHourglassStore();
+  const auth = useAuth();
+  const sidebarOpen = store.sidebarOpen;
+  const setSidebarOpen = store.setSidebarOpen;
+  const rescueModeActive = store.rescueModeActive;
+  const orchestration = store.orchestration;
+  const profile = auth.profile;
+  const signOutUser = auth.signOutUser;
 
   return (
     <>
@@ -94,6 +104,24 @@ export function Sidebar() {
                 <Mic className="h-4 w-4" />
                 Voice Coach
               </Link>
+
+              <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+                <p className="truncate text-sm font-medium text-white">
+                  {profile?.displayName ?? "Authenticated user"}
+                </p>
+                <p className="truncate text-xs text-white/45">
+                  {profile?.email ?? "Session protected"}
+                </p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-3 w-full justify-between"
+                  onClick={() => void signOutUser()}
+                >
+                  Sign out
+                  <LogOut className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </motion.aside>
         )}

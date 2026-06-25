@@ -1,7 +1,7 @@
 "use client";
 
 import { DashboardShell } from "@/components/layout/sidebar";
-import { FutureSelfTimeline } from "@/components/dashboard/commitment-score";
+import { FutureSelfSimulation } from "@/components/dashboard/future-self-simulation";
 import { OpportunityLossPanel } from "@/components/dashboard/opportunity-panel";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import Link from "next/link";
@@ -26,13 +26,19 @@ export default function FutureSelfPage() {
   return (
     <DashboardShell>
       <div className="p-6 lg:p-8">
-        <h1 className="mb-2 text-2xl font-bold">Future Self</h1>
-        <p className="mb-6 text-sm text-white/40">
-          Predictive timeline — if current behavior continues
-        </p>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <FutureSelfTimeline projections={orchestration.futureSelf} />
-          <OpportunityLossPanel impacts={orchestration.opportunityImpacts} />
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold">Future Self Simulation</h1>
+          <p className="text-sm text-white/40">
+            Predictive timeline — if current behavior continues, here's what happens
+          </p>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2">
+            <FutureSelfSimulation projections={orchestration.futureSelf} />
+          </div>
+          <div className="space-y-6">
+            <OpportunityLossPanel impacts={orchestration.opportunityImpacts} />
+          </div>
         </div>
       </div>
     </DashboardShell>

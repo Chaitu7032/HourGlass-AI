@@ -1,0 +1,14 @@
+# Hourglass AI - Engineering Task Plan
+
+## Current State Analysis
+- ✅ Priority 1 (Auth) - Implemented with Firebase Auth, Google Sign-In, Email/Password, session cookies, middleware
+- ⬜ Priority 2 (Firestore) - Zustand store only, no Firestore persistence for tasks/goals/results
+- ⬜ Priority 3 (Google Calendar) - Not implemented
+- ⬜ Priority 4 (Explainable AI) - Basic reasoning exists but no detailed explanations
+- ⬜ Priority 5 (Demo Mode) - Still demo-first; landing page directs to demo
+- ⬜ New Feature (What is Hourglass) - Not implemented
+- ⬜ UI Polish - Needs improvement
+- ⬜ Animations - Framer Motion exists but needs intentional usage
+- ⬜ Accessibility - Needs improvement
+- ⬜ Performance - Needs review
+- ⬜ Code Quality - Some dead code (demo-data.ts, demo-selector.tsx)

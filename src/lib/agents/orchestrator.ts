@@ -15,7 +15,6 @@ import type {
   OrchestrationResult,
 } from "@/types";
 import { generateId, hoursUntil, daysUntil } from "@/lib/utils";
-import { DEMO_TASKS } from "@/lib/demo-data";
 
 const RESCUE_THRESHOLD = 0.65;
 const AVAILABLE_HOURS = 28;
@@ -317,7 +316,7 @@ function buildFutureSelf(): FutureSelfProjection[] {
 }
 
 /** Deterministic orchestration engine — works offline for demo; Gemini enhances in production */
-export async function runOrchestration(tasks: Task[] = DEMO_TASKS): Promise<OrchestrationResult> {
+export async function runOrchestration(tasks: Task[] = []): Promise<OrchestrationResult> {
   const startTime = Date.now();
   const logs: AgentLogEntry[] = [];
 

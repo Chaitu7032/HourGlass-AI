@@ -5,7 +5,6 @@ import type {
   AgentLogEntry,
   ChatMessage,
 } from "@/types";
-import { DEMO_TASKS } from "@/lib/demo-data";
 import { generateId } from "@/lib/utils";
 
 interface HourglassState {
@@ -15,24 +14,25 @@ interface HourglassState {
   orchestrationProgress: AgentLogEntry[];
   chatMessages: ChatMessage[];
   isChatLoading: boolean;
-  demoMode: boolean;
   sidebarOpen: boolean;
   rescueModeActive: boolean;
   voiceEnabled: boolean;
+  workspaceHydrated: boolean;
 
   setTasks: (tasks: Task[]) => void;
   addTask: (task: Task) => void;
+  updateTask: (taskId: string, updates: Partial<Task>) => void;
+  removeTask: (taskId: string) => void;
   setOrchestration: (result: OrchestrationResult | null) => void;
   setIsOrchestrating: (v: boolean) => void;
   appendOrchestrationLog: (log: AgentLogEntry) => void;
   clearOrchestrationProgress: () => void;
   addChatMessage: (msg: Omit<ChatMessage, "id" | "timestamp">) => void;
   setIsChatLoading: (v: boolean) => void;
-  setDemoMode: (v: boolean) => void;
   setSidebarOpen: (v: boolean) => void;
   setRescueModeActive: (v: boolean) => void;
   setVoiceEnabled: (v: boolean) => void;
-  loadDemo: () => void;
+  setWorkspaceHydrated: (v: boolean) => void;
   reset: () => void;
 }
 
@@ -43,13 +43,30 @@ export const useHourglassStore = create<HourglassState>((set) => ({
   orchestrationProgress: [],
   chatMessages: [],
   isChatLoading: false,
-  demoMode: false,
   sidebarOpen: true,
   rescueModeActive: false,
   voiceEnabled: false,
+  workspaceHydrated: false,
 
   setTasks: (tasks) => set({ tasks }),
-  addTask: (task) => set((s) => ({ tasks: [...s.tasks, task] })),
+  addTask: (task) =>
+    set((s) => ({
+      tasks: [...s.tasks, { ...task, id: task.id || generateId() }],
+    })),
+  updateTask: (taskId, updates) =>
+    set((s) => ({
+      tasks: s.tasks.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              ...updates,
+              updatedAt: updates.updatedAt ?? new Date().toISOString(),
+            }
+          : task
+      ),
+    })),
+  removeTask: (taskId) =>
+    set((s) => ({ tasks: s.tasks.filter((task) => task.id !== taskId) })),
   setOrchestration: (orchestration) =>
     set({
       orchestration,
@@ -67,25 +84,10 @@ export const useHourglassStore = create<HourglassState>((set) => ({
       ],
     })),
   setIsChatLoading: (isChatLoading) => set({ isChatLoading }),
-  setDemoMode: (demoMode) => set({ demoMode }),
   setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
   setRescueModeActive: (rescueModeActive) => set({ rescueModeActive }),
   setVoiceEnabled: (voiceEnabled) => set({ voiceEnabled }),
-  loadDemo: () =>
-    set({
-      tasks: DEMO_TASKS,
-      demoMode: true,
-      chatMessages: [
-        {
-          id: generateId(),
-          role: "assistant",
-          content:
-            "Demo loaded. 4 commitments detected — 54 hours required, 28 available. Initiating multi-agent analysis...",
-          timestamp: new Date().toISOString(),
-          agentContext: "orchestrator",
-        },
-      ],
-    }),
+  setWorkspaceHydrated: (workspaceHydrated) => set({ workspaceHydrated }),
   reset: () =>
     set({
       tasks: [],
@@ -93,7 +95,7 @@ export const useHourglassStore = create<HourglassState>((set) => ({
       isOrchestrating: false,
       orchestrationProgress: [],
       chatMessages: [],
-      demoMode: false,
       rescueModeActive: false,
+      workspaceHydrated: false,
     }),
 }));
