@@ -43,30 +43,31 @@ export function Sidebar() {
 
   return (
     <>
-      <AnimatePresence>
+      <AnimatePresence mode="wait">
         {sidebarOpen && (
           <motion.aside
-            initial={{ x: -280, opacity: 0 }}
+            initial={{ x: -260, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -280, opacity: 0 }}
-            transition={{ type: "spring", damping: 25, stiffness: 200 }}
-            className="fixed left-0 top-0 z-40 flex h-full w-64 flex-col border-r border-white/10 bg-zinc-950/80 backdrop-blur-2xl"
+            exit={{ x: -260, opacity: 0 }}
+            transition={{ type: "spring", damping: 28, stiffness: 220, mass: 0.8 }}
+            className="fixed left-0 top-0 z-40 flex h-full w-[240px] flex-col border-r border-white/10 bg-zinc-950/80 backdrop-blur-2xl lg:w-[220px] xl:w-[240px]"
           >
-            <div className="flex items-center gap-3 border-b border-white/10 p-5">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-blue-500/30">
-                <Hourglass className="h-5 w-5 text-white" />
+            <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-4 lg:px-5">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-blue-500/25">
+                <Hourglass className="h-4 w-4 text-white" />
               </div>
-              <div>
-                <h1 className="text-sm font-semibold text-white">Hourglass AI</h1>
-                <p className="text-[10px] text-white/40">Predictive Execution OS</p>
+              <div className="min-w-0">
+                <h1 className="text-sm font-semibold text-white truncate">Hourglass AI</h1>
+                <p className="text-[9px] text-white/40 truncate">Predictive Execution OS</p>
               </div>
             </div>
 
             {rescueModeActive && (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="mx-3 mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mx-3 mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2"
               >
                 <p className="text-xs font-medium text-red-400">Rescue Mode Active</p>
                 <p className="text-[10px] text-red-400/70">
@@ -75,7 +76,7 @@ export function Sidebar() {
               </motion.div>
             )}
 
-            <nav className="flex-1 space-y-1 p-3">
+            <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3 lg:px-3">
               {navItems.map((item) => {
                 const active = pathname === item.href;
                 return (
@@ -83,56 +84,63 @@ export function Sidebar() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-all",
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
                       active
                         ? "bg-white/10 text-white shadow-sm"
-                        : "text-white/50 hover:bg-white/5 hover:text-white/80"
+                        : "text-white/50 hover:bg-white/5 hover:text-white/80 active:scale-[0.98]"
                     )}
                   >
-                    <item.icon className="h-4 w-4" />
-                    {item.label}
+                    <item.icon className={cn("h-4 w-4 shrink-0 transition-transform duration-150", active ? "scale-105" : "")} />
+                    <span className="truncate">{item.label}</span>
+                    {active && (
+                      <motion.div
+                        layoutId="nav-indicator"
+                        className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-blue-400"
+                      />
+                    )}
                   </Link>
                 );
               })}
             </nav>
 
-            <div className="border-t border-white/10 p-3">
+            <div className="border-t border-white/10 px-2 py-2 lg:px-3">
               <Link
                 href="/dashboard/voice"
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/50 hover:bg-white/5 hover:text-white/80"
+                className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-white/50 hover:bg-white/5 hover:text-white/80 transition-all"
               >
-                <Mic className="h-4 w-4" />
-                Voice Coach
+                <Mic className="h-4 w-4 shrink-0" />
+                <span className="truncate">Voice Coach</span>
               </Link>
 
-              <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5">
                 <p className="truncate text-sm font-medium text-white">
-                  {profile?.displayName ?? "Authenticated user"}
+                  {profile?.displayName ?? "User"}
                 </p>
-                <p className="truncate text-xs text-white/45">
-                  {profile?.email ?? "Session protected"}
+                <p className="truncate text-[10px] text-white/45">
+                  {profile?.email ?? "Protected"}
                 </p>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-3 w-full justify-between"
+                <button
                   onClick={() => void signOutUser()}
+                  className="mt-2 w-full rounded-lg px-2 py-1.5 text-xs text-white/40 hover:bg-white/5 hover:text-white/70 transition-all text-left"
                 >
                   Sign out
-                  <LogOut className="h-4 w-4" />
-                </Button>
+                </button>
               </div>
             </div>
           </motion.aside>
         )}
       </AnimatePresence>
 
+      {/* Mobile toggle button */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="fixed left-4 top-4 z-50 flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 backdrop-blur-xl border border-white/10 text-white/70 hover:text-white lg:hidden"
+        className={cn(
+          "fixed z-50 flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-zinc-950/80 backdrop-blur-xl text-white/50 hover:text-white transition-all",
+          sidebarOpen ? "left-[248px] top-4 lg:left-[228px] xl:left-[248px]" : "left-4 top-4"
+        )}
         aria-label="Toggle sidebar"
       >
-        {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        {sidebarOpen ? <ChevronLeft className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
       </button>
     </>
   );
@@ -143,19 +151,22 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-zinc-950">
-      <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="absolute -left-40 -top-40 h-80 w-80 rounded-full bg-blue-600/20 blur-[120px]" />
-        <div className="absolute -right-40 top-1/3 h-96 w-96 rounded-full bg-violet-600/15 blur-[120px]" />
-        <div className="absolute bottom-0 left-1/3 h-64 w-64 rounded-full bg-cyan-600/10 blur-[100px]" />
+      {/* Ambient background - smaller blobs for better performance */}
+      <div className="pointer-events-none fixed inset-0 overflow-hidden" aria-hidden="true">
+        <div className="absolute -left-32 -top-32 h-64 w-64 rounded-full bg-blue-600/15 blur-[100px]" />
+        <div className="absolute -right-32 top-1/4 h-72 w-72 rounded-full bg-violet-600/10 blur-[100px]" />
+        <div className="absolute bottom-0 left-1/4 h-48 w-48 rounded-full bg-cyan-600/8 blur-[80px]" />
       </div>
       <Sidebar />
       <main
         className={cn(
-          "relative min-h-screen transition-all duration-300",
-          sidebarOpen ? "lg:pl-64" : "pl-0"
+          "relative min-h-screen transition-all duration-300 ease-out",
+          sidebarOpen ? "lg:pl-[220px] xl:pl-[240px]" : "pl-0"
         )}
       >
-        {children}
+        <div className="mx-auto max-w-[1400px]">
+          {children}
+        </div>
       </main>
     </div>
   );

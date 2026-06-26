@@ -3,10 +3,10 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 
 export const metadata: Metadata = {
-  title: "Hourglass AI - Predict Missed Deadlines Before They Happen",
+  title: "Hourglass AI — Predictive Execution Operating System",
   description:
-    "The AI that predicts missed deadlines before they happen. An autonomous execution operating system powered by Gemini.",
-  keywords: ["AI", "productivity", "deadline prediction", "Gemini", "Google"],
+    "Hourglass AI is an autonomous execution operating system that continuously predicts failure, reorganizes your schedule, and prevents you from missing commitments — before it's too late. Powered by Gemini 2.5 Flash and a 10-agent orchestration pipeline.",
+  keywords: ["AI", "productivity", "deadline prediction", "Gemini", "execution OS", "commitment tracking"],
 };
 
 export default function RootLayout({

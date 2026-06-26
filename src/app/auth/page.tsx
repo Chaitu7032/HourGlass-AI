@@ -23,8 +23,18 @@ function AuthPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/dashboard";
-  const { user, profile, loading, initialized, error, signInWithEmail, signInWithGoogle, signUpWithEmail, sendPasswordReset } =
-    useAuth();
+  const {
+    user,
+    profile,
+    loading,
+    initialized,
+    profileStatus,
+    error,
+    signInWithEmail,
+    signInWithGoogle,
+    signUpWithEmail,
+    sendPasswordReset,
+  } = useAuth();
 
   const [mode, setMode] = useState<Mode>("signin");
   const [name, setName] = useState("");
@@ -34,9 +44,9 @@ function AuthPageContent() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!initialized || loading || !user) return;
+    if (!initialized || loading || profileStatus === "loading" || !user) return;
     router.replace(profile?.onboardingComplete ? next : "/onboarding");
-  }, [initialized, loading, next, profile?.onboardingComplete, router, user]);
+  }, [initialized, loading, next, profile?.onboardingComplete, profileStatus, router, user]);
 
   const headline = useMemo(() => {
     if (mode === "reset") return "Reset your password";

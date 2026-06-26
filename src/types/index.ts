@@ -8,7 +8,18 @@ export type TaskCategory =
   | "assignment"
   | "project"
   | "meeting"
-  | "personal";
+  | "personal"
+  | "research"
+  | "coding_project"
+  | "startup"
+  | "open_source"
+  | "health"
+  | "finance"
+  | "learning"
+  | "work"
+  | "career"
+  | "side_project"
+  | "other";
 
 export type AgentName =
   | "orchestrator"
@@ -38,6 +49,27 @@ export interface Task {
   complexity: number; // 1-10
   createdAt: string;
   updatedAt: string;
+}
+
+export interface PlannerSuggestion {
+  source: "Gemini" | "Heuristic";
+  confidence: number;
+  estimatedHours: number;
+  estimatedHoursConfidence: number;
+  complexity: number;
+  complexityLabel: string;
+  priority: TaskPriority;
+  category: TaskCategory;
+  deadlineRisk: "low" | "moderate" | "elevated" | "high" | "critical";
+  subtaskCount: number;
+  subtasks: string[];
+  executionStrategy: string;
+  suggestedWorkSessions: number;
+  availableCapacityHours: number;
+  firstStep: string;
+  executionHealth: string;
+  reasoning: string;
+  assumptions: string[];
 }
 
 export interface Goal {

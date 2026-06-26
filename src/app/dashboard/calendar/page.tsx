@@ -60,12 +60,22 @@ export default function CalendarPage() {
   if (!orchestration) {
     return (
       <DashboardShell>
-        <div className="flex flex-col items-center justify-center p-12 text-center">
-          <p className="text-white/50">Run analysis to generate optimized calendar blocks.</p>
-          <Button asChild className="mt-4">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex flex-col items-center justify-center p-12 text-center"
+        >
+          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500/20 to-cyan-500/20">
+            <CalendarClock className="h-8 w-8 text-sky-400" />
+          </div>
+          <h2 className="text-xl font-semibold">Protected schedule not generated yet</h2>
+          <p className="mt-2 max-w-md text-sm text-white/50">
+            Run the planning pipeline from Mission Control. The Calendar Agent will create a protected timeline with deep work slots, recovery windows, and open buffer based on your commitments and energy profile.
+          </p>
+          <Button asChild className="mt-6">
             <Link href="/dashboard">Go to Mission Control</Link>
           </Button>
-        </div>
+        </motion.div>
       </DashboardShell>
     );
   }

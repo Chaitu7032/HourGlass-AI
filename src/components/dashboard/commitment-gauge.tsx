@@ -28,15 +28,6 @@ export function CommitmentGauge({ score }: CommitmentGaugeProps) {
         ? "text-red-400"
         : "text-yellow-400";
 
-  const gaugeColor =
-    score.overall >= 80
-      ? "from-emerald-500 to-emerald-400"
-      : score.overall >= 60
-        ? "from-blue-500 to-blue-400"
-        : score.overall >= 40
-          ? "from-yellow-500 to-yellow-400"
-          : "from-red-500 to-red-400";
-
   const factors = [
     { label: "Completion Rate", value: score.completionRate, icon: Target, color: "text-blue-400" },
     { label: "Planning Quality", value: score.planningQuality, icon: Brain, color: "text-violet-400" },

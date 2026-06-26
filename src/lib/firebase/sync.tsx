@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useEffect, useRef } from "react";
 import {
   collection,
   query,
@@ -9,9 +9,6 @@ import {
   onSnapshot,
   addDoc,
   serverTimestamp,
-  doc,
-  updateDoc,
-  deleteDoc,
 } from "firebase/firestore";
 import { getFirebaseDb } from "@/lib/firebase/config";
 import { COLLECTIONS } from "@/lib/firebase/collections";
@@ -20,8 +17,6 @@ import { useHourglassStore } from "@/lib/store/hourglass-store";
 import type {
   Task,
   OrchestrationResult,
-  ChatMessage,
-  AgentLogEntry,
 } from "@/types";
 
 /**
@@ -41,8 +36,6 @@ export function useFirestoreSync() {
     setTasks,
     setOrchestration,
     setWorkspaceHydrated,
-    addChatMessage,
-    orchestration,
   } = useHourglassStore();
   const syncActive = useRef(false);
 
@@ -54,7 +47,10 @@ export function useFirestoreSync() {
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      setWorkspaceHydrated(true);
+      return;
+    }
 
     syncActive.current = true;
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.tasks);
@@ -100,7 +96,9 @@ export function useFirestoreSync() {
     if (!user || !initialized) return;
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.plans);
     const q = query(colRef, orderBy("timestamp", "desc"), limit(1));

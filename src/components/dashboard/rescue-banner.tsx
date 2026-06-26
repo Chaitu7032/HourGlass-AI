@@ -3,7 +3,6 @@
 import { motion } from "framer-motion";
 import { Shield, AlertTriangle, Clock, Brain, ArrowRight, X } from "lucide-react";
 import { useState } from "react";
-import { cn } from "@/lib/utils";
 import type { RescuePlan, RiskAssessment } from "@/types";
 
 interface RescueBannerProps {

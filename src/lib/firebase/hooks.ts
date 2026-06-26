@@ -1,43 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  deleteDoc,
-  query,
-  orderBy,
   limit,
   onSnapshot,
+  orderBy,
+  query,
   serverTimestamp,
-  addDoc,
-  where,
+  updateDoc,
   type DocumentData,
   type QueryConstraint,
-  type SnapshotOptions,
 } from "firebase/firestore";
+import { useAuth } from "@/components/auth/auth-provider";
 import { getFirebaseDb } from "@/lib/firebase/config";
 import { COLLECTIONS } from "@/lib/firebase/collections";
-import { useAuth } from "@/components/auth/auth-provider";
-import { generateId } from "@/lib/utils";
 import type {
-  Task,
-  Goal,
-  OrchestrationResult,
-  RiskAssessment,
-  RescuePlan,
+  AgentLogEntry,
+  BehaviorPattern,
   CalendarBlock,
   CommitmentScore,
-  BehaviorPattern,
-  ChatMessage,
-  AgentLogEntry,
+  OrchestrationResult,
+  RescuePlan,
+  RiskAssessment,
+  Task,
 } from "@/types";
-
-// ── Generic Firestore hook ──────────────────────────────────────────
 
 type LoadingState = "idle" | "loading" | "error" | "success";
 
@@ -49,26 +40,14 @@ interface FirestoreResult<T> {
   refetch: () => Promise<void>;
 }
 
-type FirestoreMutateOptions = {
-  onSuccess?: () => void;
-  onError?: (err: Error) => void;
-};
+function defer(fn: () => void) {
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(fn);
+    return;
+  }
 
-// ── User-scoped collection helpers ──────────────────────────────────
-
-function userCol(userId: string, subcollection: string) {
-  const db = getFirebaseDb();
-  if (!db) throw new Error("Firebase not configured");
-  return collection(db, COLLECTIONS.users, userId, subcollection);
+  Promise.resolve().then(fn);
 }
-
-function userDoc(userId: string, subcollection: string, docId: string) {
-  const db = getFirebaseDb();
-  if (!db) throw new Error("Firebase not configured");
-  return doc(db, COLLECTIONS.users, userId, subcollection, docId);
-}
-
-// ── Hook: Read a single Firestore document with real-time listener ──
 
 export function useFirestoreDoc<T extends DocumentData>(
   path: string,
@@ -81,17 +60,22 @@ export function useFirestoreDoc<T extends DocumentData>(
 
   useEffect(() => {
     if (!docId) {
-      setData(null);
-      setLoading(false);
-      setStatus("idle");
+      defer(() => {
+        setData(null);
+        setLoading(false);
+        setStatus("idle");
+        setError(null);
+      });
       return;
     }
 
     const db = getFirebaseDb();
     if (!db) {
-      setError("Firebase not configured");
-      setStatus("error");
-      setLoading(false);
+      defer(() => {
+        setError("Firebase not configured");
+        setStatus("error");
+        setLoading(false);
+      });
       return;
     }
 
@@ -121,8 +105,15 @@ export function useFirestoreDoc<T extends DocumentData>(
 
   const refetch = useCallback(async () => {
     if (!docId) return;
+
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      setData(null);
+      setError("Firebase not configured");
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const docRef = doc(db, path, docId);
@@ -131,6 +122,7 @@ export function useFirestoreDoc<T extends DocumentData>(
         setData({ id: snap.id, ...snap.data() } as unknown as T);
       }
       setStatus("success");
+      setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch");
       setStatus("error");
@@ -139,13 +131,8 @@ export function useFirestoreDoc<T extends DocumentData>(
     }
   }, [path, docId]);
 
-  return useMemo(
-    () => ({ data, loading, error, status, refetch }),
-    [data, loading, error, status, refetch]
-  );
+  return useMemo(() => ({ data, loading, error, status, refetch }), [data, error, loading, refetch, status]);
 }
-
-// ── Hook: Read a user subcollection ─────────────────────────────────
 
 export function useUserCollection<T extends DocumentData>(
   subcollection: string,
@@ -155,19 +142,31 @@ export function useUserCollection<T extends DocumentData>(
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const normalizedConstraints = useMemo(() => constraints ?? [], [constraints]);
+  const constraintsKey = useMemo(() => JSON.stringify(normalizedConstraints), [normalizedConstraints]);
 
   useEffect(() => {
     if (!user) {
-      setItems([]);
-      setLoading(false);
+      defer(() => {
+        setItems([]);
+        setLoading(false);
+        setError(null);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setItems([]);
+        setError("Firebase not configured");
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, subcollection);
-    const q = constraints?.length ? query(colRef, ...constraints) : query(colRef);
+    const q = normalizedConstraints.length ? query(colRef, ...normalizedConstraints) : query(colRef);
 
     const unsubscribe = onSnapshot(
       q,
@@ -184,12 +183,10 @@ export function useUserCollection<T extends DocumentData>(
     );
 
     return unsubscribe;
-  }, [user, subcollection, JSON.stringify(constraints)]);
+  }, [user, subcollection, constraintsKey, normalizedConstraints]);
 
   return { items, loading, error };
 }
-
-// ── Task Hooks ──────────────────────────────────────────────────────
 
 export function useUserTasks() {
   const { user } = useAuth();
@@ -199,13 +196,23 @@ export function useUserTasks() {
 
   useEffect(() => {
     if (!user) {
-      setTasks([]);
-      setLoading(false);
+      defer(() => {
+        setTasks([]);
+        setLoading(false);
+        setError(null);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setTasks([]);
+        setError("Firebase not configured");
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.tasks);
     const q = query(colRef, orderBy("createdAt", "desc"));
@@ -239,22 +246,7 @@ export function useUserTasks() {
   const addTask = useCallback(
     async (task: Omit<Task, "id" | "createdAt" | "updatedAt">) => {
       if (!user) throw new Error("Not authenticated");
-      const db = getFirebaseDb();
-      if (!db) throw new Error("Firebase not configured");
-
-      const now = new Date().toISOString();
-      const taskData = {
-        ...task,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      };
-
-      const docRef = await addDoc(
-        collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.tasks),
-        taskData
-      );
-
-      return { id: docRef.id, ...task, createdAt: now, updatedAt: now } as Task;
+      return createUserTask(user.uid, task);
     },
     [user]
   );
@@ -288,7 +280,22 @@ export function useUserTasks() {
   return { tasks, loading, error, addTask, updateTask, removeTask };
 }
 
-// ── Orchestration Result Hook ───────────────────────────────────────
+export async function createUserTask(
+  userId: string,
+  task: Omit<Task, "id" | "createdAt" | "updatedAt">
+) {
+  const db = getFirebaseDb();
+  if (!db) throw new Error("Firebase not configured");
+
+  const now = new Date().toISOString();
+  const docRef = await addDoc(collection(db, COLLECTIONS.users, userId, COLLECTIONS.tasks), {
+    ...task,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  return { id: docRef.id, ...task, createdAt: now, updatedAt: now } as Task;
+}
 
 export function useLatestOrchestration() {
   const { user } = useAuth();
@@ -297,10 +304,23 @@ export function useLatestOrchestration() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      defer(() => {
+        setResult(null);
+        setLoading(false);
+        setError(null);
+      });
+      return;
+    }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setResult(null);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.plans);
     const q = query(colRef, orderBy("timestamp", "desc"), limit(1));
@@ -343,8 +363,6 @@ export function useLatestOrchestration() {
   return { result, loading, error, saveOrchestration };
 }
 
-// ── Risk Assessments Hook ───────────────────────────────────────────
-
 export function useRiskAssessments() {
   const { user } = useAuth();
   const [assessments, setAssessments] = useState<RiskAssessment[]>([]);
@@ -352,13 +370,21 @@ export function useRiskAssessments() {
 
   useEffect(() => {
     if (!user) {
-      setAssessments([]);
-      setLoading(false);
+      defer(() => {
+        setAssessments([]);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setAssessments([]);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.riskAssessments);
     const q = query(colRef, orderBy("assessedAt", "desc"), limit(20));
@@ -375,8 +401,6 @@ export function useRiskAssessments() {
   return { assessments, loading };
 }
 
-// ── Rescue Plans Hook ───────────────────────────────────────────────
-
 export function useRescuePlans() {
   const { user } = useAuth();
   const [plans, setPlans] = useState<RescuePlan[]>([]);
@@ -384,13 +408,21 @@ export function useRescuePlans() {
 
   useEffect(() => {
     if (!user) {
-      setPlans([]);
-      setLoading(false);
+      defer(() => {
+        setPlans([]);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setPlans([]);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.rescuePlans);
     const q = query(colRef, orderBy("triggeredAt", "desc"), limit(10));
@@ -407,8 +439,6 @@ export function useRescuePlans() {
   return { plans, loading };
 }
 
-// ── Calendar Events Hook ────────────────────────────────────────────
-
 export function useCalendarEvents() {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarBlock[]>([]);
@@ -416,13 +446,21 @@ export function useCalendarEvents() {
 
   useEffect(() => {
     if (!user) {
-      setEvents([]);
-      setLoading(false);
+      defer(() => {
+        setEvents([]);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setEvents([]);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.calendarEvents);
     const q = query(colRef, orderBy("start", "asc"));
@@ -439,8 +477,6 @@ export function useCalendarEvents() {
   return { events, loading };
 }
 
-// ── Agent Logs Hook ─────────────────────────────────────────────────
-
 export function useAgentLogs(limitCount = 50) {
   const { user } = useAuth();
   const [logs, setLogs] = useState<AgentLogEntry[]>([]);
@@ -448,13 +484,21 @@ export function useAgentLogs(limitCount = 50) {
 
   useEffect(() => {
     if (!user) {
-      setLogs([]);
-      setLoading(false);
+      defer(() => {
+        setLogs([]);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setLogs([]);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.agentLogs);
     const q = query(colRef, orderBy("timestamp", "desc"), limit(limitCount));
@@ -471,8 +515,6 @@ export function useAgentLogs(limitCount = 50) {
   return { logs, loading };
 }
 
-// ── Commitment Score Hook ───────────────────────────────────────────
-
 export function useCommitmentScore() {
   const { user } = useAuth();
   const [score, setScore] = useState<CommitmentScore | null>(null);
@@ -480,13 +522,21 @@ export function useCommitmentScore() {
 
   useEffect(() => {
     if (!user) {
-      setScore(null);
-      setLoading(false);
+      defer(() => {
+        setScore(null);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setScore(null);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.analytics);
     const q = query(colRef, orderBy("createdAt", "desc"), limit(1));
@@ -494,6 +544,8 @@ export function useCommitmentScore() {
     const unsubscribe = onSnapshot(q, (snap) => {
       if (!snap.empty) {
         setScore({ id: snap.docs[0].id, ...snap.docs[0].data() } as unknown as CommitmentScore);
+      } else {
+        setScore(null);
       }
       setLoading(false);
     });
@@ -504,8 +556,6 @@ export function useCommitmentScore() {
   return { score, loading };
 }
 
-// ── Behavior Patterns Hook ──────────────────────────────────────────
-
 export function useBehaviorPatterns() {
   const { user } = useAuth();
   const [patterns, setPatterns] = useState<BehaviorPattern | null>(null);
@@ -513,13 +563,21 @@ export function useBehaviorPatterns() {
 
   useEffect(() => {
     if (!user) {
-      setPatterns(null);
-      setLoading(false);
+      defer(() => {
+        setPatterns(null);
+        setLoading(false);
+      });
       return;
     }
 
     const db = getFirebaseDb();
-    if (!db) return;
+    if (!db) {
+      defer(() => {
+        setPatterns(null);
+        setLoading(false);
+      });
+      return;
+    }
 
     const colRef = collection(db, COLLECTIONS.users, user.uid, COLLECTIONS.behaviorPatterns);
     const q = query(colRef, orderBy("createdAt", "desc"), limit(1));
@@ -527,6 +585,8 @@ export function useBehaviorPatterns() {
     const unsubscribe = onSnapshot(q, (snap) => {
       if (!snap.empty) {
         setPatterns({ id: snap.docs[0].id, ...snap.docs[0].data() } as unknown as BehaviorPattern);
+      } else {
+        setPatterns(null);
       }
       setLoading(false);
     });

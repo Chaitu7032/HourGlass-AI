@@ -4,10 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   AlertTriangle,
   Brain,
-  Calendar,
-  Clock,
-  TrendingDown,
-  TrendingUp,
   BarChart3,
   Target,
   ChevronDown,

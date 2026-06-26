@@ -49,7 +49,6 @@ function computeFailureProbability(task: Task, patterns: BehaviorPattern): {
   const daysLeft = daysUntil(task.deadline);
   const capacityAtVelocity = hoursLeft > 0 ? (hoursLeft / 24) * patterns.executionVelocity : 0;
   const energyAdjusted = capacityAtVelocity * (ENERGY_SCORE / 100);
-  const calendarDensity = Math.min(100, (AVAILABLE_HOURS / 54) * 100);
   const complexityFactor = task.complexity / 10;
 
   let probability = 0.1;
@@ -317,7 +316,6 @@ function buildFutureSelf(): FutureSelfProjection[] {
 
 /** Deterministic orchestration engine — works offline for demo; Gemini enhances in production */
 export async function runOrchestration(tasks: Task[] = []): Promise<OrchestrationResult> {
-  const startTime = Date.now();
   const logs: AgentLogEntry[] = [];
 
   // Planner

@@ -14,7 +14,6 @@ import {
   Zap,
   Bot,
   ChevronDown,
-  CheckCircle2,
   BarChart3,
   Clock,
   Users,
@@ -141,7 +140,7 @@ export default function LandingPage() {
           >
             Not a reminder app. Not a chatbot. An autonomous execution operating system that continuously
             predicts failure, reorganizes your schedule, and prevents you from missing commitments — before
-            it's too late.
+            it&rsquo;s too late.
           </motion.p>
 
           <motion.div
@@ -366,13 +365,13 @@ export default function LandingPage() {
               { name: "Negotiation", icon: Users, desc: "Recommends trade-offs when overloaded", color: "text-pink-400" },
               { name: "Accountability", icon: Shield, desc: "Creates commitment loops and escalation", color: "text-indigo-400" },
               { name: "Reflection", icon: BarChart3, desc: "Learns from outcomes to improve", color: "text-cyan-400" },
-            ].map((agent) => (
+            ].map((agent, index) => (
               <motion.div
                 key={agent.name}
                 initial={{ opacity: 0, y: 20 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
-                transition={{ delay: Math.random() * 0.2 }}
+                transition={{ delay: 0.05 * (index % 4) }}
                 className="glass rounded-xl p-4 text-center transition-all hover:bg-white/[0.08]"
               >
                 <agent.icon className={`mx-auto h-6 w-6 ${agent.color}`} />

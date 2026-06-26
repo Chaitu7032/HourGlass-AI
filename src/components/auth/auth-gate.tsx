@@ -15,8 +15,8 @@ export function AuthGate({
 }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, profile, loading, initialized } = useAuth();
-  const awaitingProfile = Boolean(user) && !profile;
+  const { user, profile, loading, initialized, profileStatus } = useAuth();
+  const awaitingProfile = Boolean(user) && profileStatus === "loading";
 
   useEffect(() => {
     if (!initialized || loading || awaitingProfile) return;
@@ -36,7 +36,7 @@ export function AuthGate({
     loading ||
     !user ||
     awaitingProfile ||
-    (requireOnboardingComplete && profile && !profile.onboardingComplete)
+    (requireOnboardingComplete && profile?.onboardingComplete === false)
   ) {
     return (
       <div className="flex min-h-screen items-center justify-center px-6 py-16">

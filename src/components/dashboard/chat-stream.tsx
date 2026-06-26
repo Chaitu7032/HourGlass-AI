@@ -6,7 +6,6 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { Button } from "@/components/ui/button";
-import type { ChatMessage } from "@/types";
 
 const SUGGESTIONS = [
   "What's my highest risk task?",

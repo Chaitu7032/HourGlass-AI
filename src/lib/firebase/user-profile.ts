@@ -63,14 +63,34 @@ export async function ensureUserProfile(user: User): Promise<UserProfile> {
       typeof data.updatedAt === "string" ? data.updatedAt : new Date().toISOString(),
   };
 
-  await updateDoc(userRef, {
-    email: profile.email,
-    displayName: profile.displayName,
-    photoURL: profile.photoURL ?? null,
-    authProvider: profile.authProvider ?? null,
-    timezone: profile.timezone ?? null,
-    updatedAt: serverTimestamp(),
-  });
+  // Only write back to Firestore if there are fields to merge (e.g. missing displayName, email, etc.)
+  const needsUpdate =
+    (data.email ?? undefined) !== (user.email ?? undefined) ||
+    (data.displayName ?? undefined) !== (user.displayName ?? undefined) ||
+    (data.photoURL ?? undefined) !== (user.photoURL ?? undefined) ||
+    (data.authProvider ?? undefined) !== (getProvider(user) ?? undefined);
+
+  if (needsUpdate) {
+    try {
+      await updateDoc(userRef, {
+        email: profile.email,
+        displayName: profile.displayName,
+        photoURL: profile.photoURL ?? null,
+        authProvider: profile.authProvider ?? null,
+        timezone: profile.timezone ?? null,
+        updatedAt: serverTimestamp(),
+      });
+    } catch {
+      await setDoc(
+        userRef,
+        {
+          ...profile,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  }
 
   return profile;
 }
@@ -84,11 +104,15 @@ export async function completeUserOnboarding(
     throw new Error("Firebase is not configured.");
   }
 
-  await updateDoc(doc(db, COLLECTIONS.users, userId), {
-    displayName: updates.displayName,
-    primaryGoal: updates.primaryGoal,
-    timezone: updates.timezone,
-    onboardingComplete: true,
-    updatedAt: serverTimestamp(),
-  });
+  await setDoc(
+    doc(db, COLLECTIONS.users, userId),
+    {
+      displayName: updates.displayName,
+      primaryGoal: updates.primaryGoal,
+      timezone: updates.timezone,
+      onboardingComplete: true,
+      updatedAt: serverTimestamp(),
+    },
+    { merge: true }
+  );
 }
