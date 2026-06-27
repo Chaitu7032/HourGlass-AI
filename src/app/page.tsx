@@ -167,9 +167,9 @@ export default function LandingPage() {
             className="mt-16 grid gap-4 sm:grid-cols-3"
           >
             {[
-              { value: "89%", label: "Failure Prediction Accuracy", desc: "Before deadlines slip" },
-              { value: "10", label: "Specialized AI Agents", desc: "Working in orchestrated pipeline" },
-              { value: "34%", label: "Recovery Improvement", desc: "When rescue mode activates" },
+              { value: "Real data only", label: "Deterministic analytics", desc: "No fabricated percentages or demo scores" },
+              { value: "10", label: "Specialized AI Agents", desc: "Working in an orchestrated pipeline" },
+              { value: "Explainable", label: "Transparent rescue logic", desc: "Every intervention traces back to workload signals" },
             ].map((stat) => (
               <div key={stat.label} className="glass rounded-2xl p-6 text-center">
                 <div className="text-3xl font-bold bg-gradient-to-br from-blue-400 to-violet-400 bg-clip-text text-transparent">
@@ -226,7 +226,7 @@ export default function LandingPage() {
               {
                 step: "03",
                 title: "Prevent & Rescue",
-                desc: "When failure probability exceeds 65%, rescue mode activates automatically. Calendar reorganized, priorities negotiated, focus blocks scheduled. You stay on track.",
+                desc: "When modeled failure risk crosses the rescue threshold, Hourglass prepares trade-offs and the next protected actions from your real workload graph.",
                 icon: Shield,
                 color: "from-emerald-500/20 to-emerald-600/10",
                 border: "border-emerald-500/20",
@@ -295,7 +295,7 @@ export default function LandingPage() {
               {
                 icon: Shield,
                 title: "Rescue Mode",
-                desc: "89% failure detected? Calendar reorganized. Roadmap generated. Priorities negotiated. All automatic. Recovery actions with estimated impact.",
+                desc: "When the engine detects sustained overload, Hourglass generates rescue actions, priority trade-offs, and the next execution steps from the active workload.",
                 color: "text-emerald-400",
               },
               {
@@ -313,7 +313,7 @@ export default function LandingPage() {
               {
                 icon: Target,
                 title: "Opportunity Loss Engine",
-                desc: "Quantifies the real cost of missed deadlines — GPA impact, career delay, financial loss. Translates abstract deadlines into concrete consequences.",
+                desc: "Quantifies which commitments carry the most outstanding work, the nearest deadlines, and the highest modeled slippage pressure.",
                 color: "text-violet-400",
               },
             ].map((feature) => (

@@ -348,7 +348,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void updateProfile(user, { displayName }).catch(() => undefined);
     }
 
-    router.replace("/dashboard");
+    router.replace("/activation");
   };
 
   const value: AuthContextValue = {

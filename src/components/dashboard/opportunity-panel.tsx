@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import type { OpportunityImpact, NegotiationOption, RescuePlan, EnergyProfile } from "@/types";
+import type { EnergyProfile, NegotiationOption, OpportunityImpact, RescuePlan } from "@/types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -10,7 +10,7 @@ export function OpportunityLossPanel({ impacts }: { impacts: OpportunityImpact[]
     <Card>
       <CardHeader>
         <CardTitle>Opportunity Loss Engine</CardTitle>
-        <p className="text-xs text-white/40">What missing each commitment actually costs</p>
+        <p className="text-xs text-white/40">What missing each commitment currently costs in workload pressure</p>
       </CardHeader>
       <CardContent className="space-y-3">
         {impacts.map((impact, i) => (
@@ -40,11 +40,15 @@ export function OpportunityLossPanel({ impacts }: { impacts: OpportunityImpact[]
 }
 
 export function NegotiationPanel({ options }: { options: NegotiationOption[] }) {
+  const recommended = options.find((option) => option.recommended);
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>AI Negotiator</CardTitle>
-        <p className="text-xs text-white/40">54h required · 28h capacity · 26h deficit</p>
+        <p className="text-xs text-white/40">
+          {recommended ? recommended.reasoning : "Trade-off scenarios are generated from current workload pressure and task priority."}
+        </p>
       </CardHeader>
       <CardContent className="space-y-3">
         {options.map((opt, i) => (
@@ -53,19 +57,12 @@ export function NegotiationPanel({ options }: { options: NegotiationOption[] }) 
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: i * 0.12 }}
-            className={cn(
-              "rounded-xl border p-4",
-              opt.recommended
-                ? "border-blue-500/40 bg-blue-500/10"
-                : "border-white/10 bg-white/[0.02]"
-            )}
+            className={cn("rounded-xl border p-4", opt.recommended ? "border-blue-500/40 bg-blue-500/10" : "border-white/10 bg-white/[0.02]")}
           >
             <div className="flex items-center justify-between">
               <h4 className="font-medium">{opt.scenario}</h4>
               {opt.recommended && (
-                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] text-blue-400">
-                  Recommended
-                </span>
+                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-[10px] text-blue-400">Recommended</span>
               )}
             </div>
             <div className="mt-3 grid gap-2 text-xs">
@@ -91,27 +88,33 @@ export function NegotiationPanel({ options }: { options: NegotiationOption[] }) 
 }
 
 export function EnergyPanel({ profile }: { profile: EnergyProfile }) {
+  const hasCapacityData = profile.totalFreeHours > 0 || profile.productiveHours > 0;
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Energy Model</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="flex items-baseline gap-2">
-          <span className="text-3xl font-bold tabular-nums text-cyan-400">
-            {profile.productiveHours.toFixed(1)}h
-          </span>
-          <span className="text-sm text-white/40">/ {profile.totalFreeHours}h free</span>
-        </div>
+        {hasCapacityData ? (
+          <div className="flex items-baseline gap-2">
+            <span className="text-3xl font-bold tabular-nums text-cyan-400">{profile.productiveHours.toFixed(1)}h</span>
+            <span className="text-sm text-white/40">/ {profile.totalFreeHours}h free</span>
+          </div>
+        ) : (
+          <div className="text-sm text-white/70">Insufficient calendar data</div>
+        )}
         <p className="mt-2 text-xs text-white/50">{profile.reasoning}</p>
-        <div className="mt-4 space-y-2">
-          {profile.peakWindows.map((w) => (
-            <div key={w.start} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
-              <span className="text-xs">{w.start} – {w.end}</span>
-              <span className="text-xs font-medium text-cyan-400">{w.score}% peak</span>
-            </div>
-          ))}
-        </div>
+        {profile.peakWindows.length > 0 && (
+          <div className="mt-4 space-y-2">
+            {profile.peakWindows.map((window) => (
+              <div key={window.start} className="flex items-center justify-between rounded-lg bg-white/5 px-3 py-2">
+                <span className="text-xs">{window.start} - {window.end}</span>
+                <span className="text-xs font-medium text-cyan-400">{window.score}% peak</span>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -129,9 +132,7 @@ export function RescuePlanPanel({ plans }: { plans: RescuePlan[] }) {
         {plans.map((plan) => (
           <div key={plan.id}>
             <div className="mb-3 flex items-center justify-between">
-              <span className="text-sm text-white/60">
-                Triggered at {Math.round(plan.failureProbability * 100)}% failure probability
-              </span>
+              <span className="text-sm text-white/60">Triggered at {Math.round(plan.failureProbability * 100)}% failure probability</span>
             </div>
             <div className="space-y-2">
               {plan.roadmap.map((step) => (
@@ -170,12 +171,12 @@ export function ExecutiveSummary({ summary, voiceMessage }: { summary: string; v
       className="rounded-2xl border border-blue-500/20 bg-gradient-to-br from-blue-500/10 to-violet-500/10 p-6 backdrop-blur-xl"
     >
       <div className="flex items-center gap-2 text-sm font-medium text-blue-400">
-        <span className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+        <span className="h-2 w-2 animate-pulse rounded-full bg-blue-400" />
         Chief of Staff Briefing
       </div>
       <p className="mt-3 text-sm leading-relaxed text-white/80">{summary}</p>
       <div className="mt-4 rounded-xl bg-black/20 p-4">
-        <p className="text-xs text-white/40 mb-1">Voice Coach</p>
+        <p className="mb-1 text-xs text-white/40">Voice Coach</p>
         <p className="text-sm italic text-white/70">&ldquo;{voiceMessage}&rdquo;</p>
       </div>
     </motion.div>

@@ -87,11 +87,20 @@ export interface RiskFactor {
   description: string;
 }
 
+export type DataStatus = "ready" | "insufficient_data";
+
+export interface ConfidenceScore {
+  value: number;
+  label: "low" | "medium" | "high";
+  reasoning: string;
+}
+
 export interface RiskAssessment {
   taskId: string;
   taskTitle: string;
   failureProbability: number;
-  confidence: number;
+  confidence: ConfidenceScore;
+  dataStatus: DataStatus;
   factors: RiskFactor[];
   reasoning: string;
   rescueRecommended: boolean;
@@ -140,11 +149,13 @@ export interface CalendarBlock {
 }
 
 export interface EnergyProfile {
+  dataStatus: DataStatus;
   totalFreeHours: number;
   productiveHours: number;
   energyScore: number; // 0-100
   peakWindows: { start: string; end: string; score: number }[];
   reasoning: string;
+  insufficientDataReasons: string[];
 }
 
 export interface OpportunityImpact {
@@ -176,6 +187,31 @@ export interface FutureSelfProjection {
   narrative: string;
 }
 
+export interface FutureScenario {
+  id: string;
+  label: string;
+  mode: "current" | "rescue" | "optimized";
+  dataStatus: DataStatus;
+  summary: string;
+  adjustments: string[];
+  projections: FutureSelfProjection[];
+}
+
+export interface CommitmentScoreDimension {
+  key:
+    | "completionRate"
+    | "planningQuality"
+    | "executionConsistency"
+    | "recoveryAbility"
+    | "focus"
+    | "reliability";
+  label: string;
+  value: number;
+  weight: number;
+  weightedContribution: number;
+  reasoning: string;
+}
+
 export interface CommitmentScore {
   overall: number;
   completionRate: number;
@@ -185,11 +221,14 @@ export interface CommitmentScore {
   focus: number;
   reliability: number;
   trend: "improving" | "stable" | "declining";
+  dataStatus: DataStatus;
+  historyUnavailableReason?: string;
+  scoreBreakdown: CommitmentScoreDimension[];
   history: { date: string; score: number }[];
 }
 
 export interface BehaviorPattern {
-  preferredWorkHours: { start: number; end: number };
+  preferredWorkHours: { start: number; end: number } | null;
   productivityTrend: number; // % change week over week
   recurringDelays: string[];
   executionVelocity: number; // hours/day
@@ -220,6 +259,7 @@ export interface OrchestrationResult {
   opportunityImpacts: OpportunityImpact[];
   negotiationOptions: NegotiationOption[];
   futureSelf: FutureSelfProjection[];
+  futureScenarios: FutureScenario[];
   commitmentScore: CommitmentScore;
   behaviorPatterns: BehaviorPattern;
   executiveSummary: string;

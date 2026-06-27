@@ -8,7 +8,6 @@ import {
   CheckCircle2,
   CircleGauge,
   Clock3,
-  Info,
   Lightbulb,
   ListChecks,
   Sparkles,
@@ -126,14 +125,23 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
     complexity: false,
   });
 
+  // Reset form every time dialog opens to avoid stale state
+  useEffect(() => {
+    if (open) {
+      const reset = window.setTimeout(() => {
+        setValues(createDefaultValues());
+        setTouched({ estimatedHours: false, priority: false, category: false, complexity: false });
+        setPlannerSuggestion(null);
+        setPlannerStatus("idle");
+        setSuggestionError(null);
+      }, 0);
+
+      return () => window.clearTimeout(reset);
+    }
+  }, [open]);
+
   const parsedHours = values.estimatedHours ? Number(values.estimatedHours) : Number.NaN;
   const parsedComplexity = values.complexity ? Number(values.complexity) : Number.NaN;
-  const deadlineLabel = useMemo(() => {
-    const date = getDeadlineDate(values.deadlineDate);
-    if (!date) return "No deadline selected";
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  }, [values.deadlineDate]);
-
   const currentDraft = useMemo(
     () => ({
       title: values.title,
@@ -157,10 +165,13 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
 
   useEffect(() => {
     if (!values.title.trim()) {
-      setPlannerSuggestion(null);
-      setPlannerStatus("idle");
-      setSuggestionError(null);
-      return;
+      const reset = window.setTimeout(() => {
+        setPlannerSuggestion(null);
+        setPlannerStatus("idle");
+        setSuggestionError(null);
+      }, 0);
+
+      return () => window.clearTimeout(reset);
     }
 
     const controller = new AbortController();
@@ -245,189 +256,194 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
   const categoryCopy = CATEGORY_OPTIONS.find((option) => option.value === values.category) ?? CATEGORY_OPTIONS[CATEGORY_OPTIONS.length - 1];
   const deadlineRiskTone = getRiskTone(activeSuggestion.deadlineRisk);
   const executionHealthTone = getExecutionHealthTone(activeSuggestion.executionHealth);
-  const aiConfidence = Math.round(activeSuggestion.confidence * 100);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="grid max-h-[90vh] gap-0 overflow-hidden p-0 sm:max-w-5xl lg:max-w-6xl">
-        <div className="grid gap-0 overflow-y-auto lg:grid-cols-[1.2fr_0.95fr]">
-          <div className="border-b border-white/10 p-6 sm:p-8 lg:border-b-0 lg:border-r">
-            <DialogHeader className="max-w-xl text-left">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
-                <Sparkles className="h-3.5 w-3.5" />
-                Planner-assisted commitment
-              </div>
-              <DialogTitle>Create a commitment with AI planning support</DialogTitle>
-              <DialogDescription>
-                Start with a title and Hourglass will suggest effort, complexity, priority, category, and first
-                steps. Everything stays editable before we save to Firestore.
-              </DialogDescription>
-            </DialogHeader>
+      <DialogContent className="flex max-h-[90vh] w-[calc(100vw-1.5rem)] flex-col overflow-hidden p-0 sm:w-[calc(100vw-3rem)] sm:max-w-5xl lg:max-w-6xl">
+        <div className="grid min-h-0 flex-1 gap-0 overflow-hidden lg:grid-cols-[1.2fr_0.95fr]">
+          <div className="flex min-h-0 flex-col overflow-hidden border-b border-white/10 lg:border-b-0 lg:border-r">
+            <div className="flex-1 overflow-y-auto overscroll-contain p-6 sm:p-8">
+              <DialogHeader className="max-w-xl text-left">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-sky-400/20 bg-sky-400/10 px-3 py-1 text-xs font-medium text-sky-200">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Planner-assisted commitment
+                </div>
+                <DialogTitle>Create a commitment with AI planning support</DialogTitle>
+                <DialogDescription>
+                  Start with a title and Hourglass will suggest effort, complexity, priority, category, and first
+                  steps. Everything stays editable before we save to Firestore.
+                </DialogDescription>
+              </DialogHeader>
 
-            <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="space-y-2 sm:col-span-2">
-                  <span className="text-sm font-medium text-white/70">Task title</span>
-                  <Input
-                    required
-                    value={values.title}
-                    onChange={(event) => setValues((current) => ({ ...current, title: event.target.value }))}
-                    placeholder="Ship homepage analytics before Thursday"
-                  />
-                </label>
+              <form id="commitment-form" className="mt-6 space-y-4" onSubmit={handleSubmit}>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="space-y-2 sm:col-span-2">
+                    <span className="text-sm font-medium text-white/70">Task title</span>
+                    <Input
+                      required
+                      value={values.title}
+                      onChange={(event) => setValues((current) => ({ ...current, title: event.target.value }))}
+                      placeholder="Ship homepage analytics before Thursday"
+                    />
+                  </label>
 
-                <label className="space-y-2 sm:col-span-2">
-                  <span className="text-sm font-medium text-white/70">Description</span>
-                  <Textarea
-                    value={values.description}
-                    onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))}
-                    placeholder="What exactly needs to be delivered? What does success look like? Any blockers or dependencies?"
-                  />
-                  <p className="text-[11px] leading-5 text-white/35">
-                    Give the planner enough context to estimate effort, identify blockers, and recommend the first step.
-                  </p>
-                </label>
+                  <label className="space-y-2 sm:col-span-2">
+                    <span className="text-sm font-medium text-white/70">Description</span>
+                    <Textarea
+                      value={values.description}
+                      onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="What exactly needs to be delivered? What does success look like? Any blockers or dependencies?"
+                    />
+                    <p className="text-[11px] leading-5 text-white/35">
+                      Give the planner enough context to estimate effort, identify blockers, and recommend the first step.
+                    </p>
+                  </label>
 
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-white/70">Deadline</span>
-                  <Input
-                    required
-                    type="date"
-                    value={values.deadlineDate}
-                    onChange={(event) => setValues((current) => ({ ...current, deadlineDate: event.target.value }))}
-                  />
-                  <p className="text-[11px] text-white/35">
-                    {daysRemaining !== null ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining` : "No deadline selected"}
-                  </p>
-                </label>
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-white/70">Deadline</span>
+                    <Input
+                      required
+                      type="date"
+                      value={values.deadlineDate}
+                      onChange={(event) => setValues((current) => ({ ...current, deadlineDate: event.target.value }))}
+                    />
+                    <p className="text-[11px] text-white/35">
+                      {daysRemaining !== null ? `${daysRemaining} day${daysRemaining === 1 ? "" : "s"} remaining` : "No deadline selected"}
+                    </p>
+                  </label>
 
-                <label className="space-y-2">
+                  <label className="space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-white/70">Estimated hours</span>
+                      <span className="text-[11px] text-sky-300">
+                        AI suggests {formatHours(activeSuggestion.estimatedHours)} · {Math.round(activeSuggestion.estimatedHoursConfidence * 100)}% confidence
+                      </span>
+                    </div>
+                    <Input
+                      type="number"
+                      min="0.5"
+                      step="0.5"
+                      value={values.estimatedHours}
+                      onChange={(event) => {
+                        setTouched((current) => ({ ...current, estimatedHours: true }));
+                        setValues((current) => ({ ...current, estimatedHours: event.target.value }));
+                      }}
+                      placeholder={String(activeSuggestion.estimatedHours)}
+                    />
+                    <p className="text-[11px] text-white/35">You can override the recommendation at any time.</p>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-white/70">Priority</span>
+                    <select
+                      value={values.priority}
+                      onChange={(event) => {
+                        setTouched((current) => ({ ...current, priority: true }));
+                        setValues((current) => ({ ...current, priority: event.target.value as TaskPriority }));
+                      }}
+                      className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition focus:border-sky-400/50 focus:bg-white/[0.06]"
+                    >
+                      {PRIORITY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} className="bg-zinc-950">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-white/35">{priorityCopy.description}</p>
+                  </label>
+
+                  <label className="space-y-2">
+                    <span className="text-sm font-medium text-white/70">Category</span>
+                    <select
+                      value={values.category}
+                      onChange={(event) => {
+                        setTouched((current) => ({ ...current, category: true }));
+                        setValues((current) => ({ ...current, category: event.target.value as TaskCategory }));
+                      }}
+                      className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition focus:border-sky-400/50 focus:bg-white/[0.06]"
+                    >
+                      {CATEGORY_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value} className="bg-zinc-950">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[11px] text-white/35">{categoryCopy.description}</p>
+                  </label>
+
+                  <label className="space-y-2 sm:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-white/70">Complexity</span>
+                      <span className="text-sm text-white/40">
+                        {complexityNumber}/10 · {complexityCopy.label}
+                      </span>
+                    </div>
+                    <Input
+                      type="number"
+                      min="1"
+                      max="10"
+                      step="1"
+                      value={values.complexity}
+                      onChange={(event) => {
+                        setTouched((current) => ({ ...current, complexity: true }));
+                        setValues((current) => ({ ...current, complexity: event.target.value }));
+                      }}
+                      placeholder="5"
+                    />
+                    <p className="text-[11px] leading-5 text-white/35">{complexityCopy.hint}</p>
+                  </label>
+                </div>
+
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-white/70">Estimated hours</span>
-                    <span className="text-[11px] text-sky-300">
-                      AI suggests {formatHours(activeSuggestion.estimatedHours)} · {Math.round(activeSuggestion.estimatedHoursConfidence * 100)}% confidence
+                    <div className="flex items-center gap-2 text-sm font-medium text-white/80">
+                      <Brain className="h-4 w-4 text-sky-300" />
+                      Planner analysis
+                    </div>
+                    <span className={cn("text-[11px] uppercase tracking-[0.18em]", activeSuggestion.source === "Gemini" ? "text-emerald-300" : "text-white/40")}>
+                      {plannerStatus === "loading" ? "Analyzing..." : `${activeSuggestion.source} assisted`}
                     </span>
                   </div>
-                  <Input
-                    type="number"
-                    min="0.5"
-                    step="0.5"
-                    value={values.estimatedHours}
-                    onChange={(event) => {
-                      setTouched((current) => ({ ...current, estimatedHours: true }));
-                      setValues((current) => ({ ...current, estimatedHours: event.target.value }));
-                    }}
-                    placeholder={String(activeSuggestion.estimatedHours)}
-                  />
-                  <p className="text-[11px] text-white/35">You can override the recommendation at any time.</p>
-                </label>
-
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-white/70">Priority</span>
-                  <select
-                    value={values.priority}
-                    onChange={(event) => {
-                      setTouched((current) => ({ ...current, priority: true }));
-                      setValues((current) => ({ ...current, priority: event.target.value as TaskPriority }));
-                    }}
-                    className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition focus:border-sky-400/50 focus:bg-white/[0.06]"
-                  >
-                    {PRIORITY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value} className="bg-zinc-950">
-                        {option.label}
-                      </option>
+                  <p className="mt-2 text-sm text-white/70">{activeSuggestion.reasoning}</p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/45">
+                    {activeSuggestion.assumptions.map((item) => (
+                      <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
+                        {item}
+                      </span>
                     ))}
-                  </select>
-                  <p className="text-[11px] text-white/35">{priorityCopy.description}</p>
-                </label>
-
-                <label className="space-y-2">
-                  <span className="text-sm font-medium text-white/70">Category</span>
-                  <select
-                    value={values.category}
-                    onChange={(event) => {
-                      setTouched((current) => ({ ...current, category: true }));
-                      setValues((current) => ({ ...current, category: event.target.value as TaskCategory }));
-                    }}
-                    className="h-11 w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 text-sm text-white outline-none transition focus:border-sky-400/50 focus:bg-white/[0.06]"
-                  >
-                    {CATEGORY_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value} className="bg-zinc-950">
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-[11px] text-white/35">{categoryCopy.description}</p>
-                </label>
-
-                <label className="space-y-2 sm:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-white/70">Complexity</span>
-                    <span className="text-sm text-white/40">
-                      {complexityNumber}/10 · {complexityCopy.label}
-                    </span>
                   </div>
-                  <Input
-                    type="number"
-                    min="1"
-                    max="10"
-                    step="1"
-                    value={values.complexity}
-                    onChange={(event) => {
-                      setTouched((current) => ({ ...current, complexity: true }));
-                      setValues((current) => ({ ...current, complexity: event.target.value }));
-                    }}
-                    placeholder="5"
-                  />
-                  <p className="text-[11px] leading-5 text-white/35">{complexityCopy.hint}</p>
-                </label>
-              </div>
+                  {suggestionError && (
+                    <p className="mt-3 text-xs text-white/35">
+                      {suggestionError}. Showing the offline heuristic model instead.
+                    </p>
+                  )}
+                </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2 text-sm font-medium text-white/80">
-                    <Brain className="h-4 w-4 text-sky-300" />
-                    Planner analysis
-                  </div>
-                  <span className={cn("text-[11px] uppercase tracking-[0.18em]", activeSuggestion.source === "Gemini" ? "text-emerald-300" : "text-white/40")}>
-                    {plannerStatus === "loading" ? "Analyzing..." : `${activeSuggestion.source} assisted`}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm text-white/70">{activeSuggestion.reasoning}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/45">
-                  {activeSuggestion.assumptions.map((item) => (
-                    <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
-                      {item}
-                    </span>
-                  ))}
-                </div>
-                {suggestionError && (
-                  <p className="mt-3 text-xs text-white/35">
-                    {suggestionError}. Showing the offline heuristic model instead.
+                {error && (
+                  <p className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+                    {error}
                   </p>
                 )}
-              </div>
+              </form>
+            </div>
 
-              {error && (
-                <p className="rounded-2xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
-                  {error}
-                </p>
-              )}
-
+            {/* ── Sticky submit bar ── */}
+            <div className="shrink-0 border-t border-white/10 bg-zinc-950/95 p-4 backdrop-blur-md sm:p-6">
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={isSaving || !values.title.trim()}>
+                <Button type="submit" disabled={isSaving || !values.title.trim()} form="commitment-form">
                   <Target className="h-4 w-4" />
                   {isSaving ? "Saving commitment..." : "Create commitment"}
                 </Button>
               </div>
-            </form>
+            </div>
           </div>
 
-          <aside className="bg-gradient-to-b from-white/[0.05] to-white/[0.02] p-6 sm:p-8">
-            <div className="rounded-3xl border border-white/10 bg-zinc-950/70 p-5 shadow-xl shadow-black/30">
+          <aside className="flex min-h-0 flex-col overflow-hidden bg-gradient-to-b from-white/[0.05] to-white/[0.02]">
+            <div className="overflow-y-auto overscroll-contain p-6 sm:p-8">
+              <div className="rounded-3xl border border-white/10 bg-zinc-950/70 p-5 shadow-xl shadow-black/30">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-white/35">
                   <ListChecks className="h-4 w-4 text-sky-300" />
@@ -569,6 +585,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                       : "Offline heuristic model filling in the plan."}
                 </p>
               </motion.div>
+              </div>
             </div>
           </aside>
         </div>

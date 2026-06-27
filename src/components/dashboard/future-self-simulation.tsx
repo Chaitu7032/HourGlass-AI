@@ -1,56 +1,109 @@
 "use client";
 
-import { motion, AnimatePresence } from "framer-motion";
-import {
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Area,
-  AreaChart,
-  ReferenceLine,
-  CartesianGrid,
-  Legend,
-} from "recharts";
-import type { FutureSelfProjection } from "@/types";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useMemo, useState } from "react";
 import { format } from "date-fns";
-import { TrendingDown, AlertTriangle, Brain, Calendar } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Area, AreaChart, CartesianGrid, Legend, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { AlertTriangle, Brain, Calendar, TrendingDown } from "lucide-react";
+import type { FutureScenario } from "@/types";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 
 interface FutureSelfSimulationProps {
-  projections: FutureSelfProjection[];
+  scenarios: FutureScenario[];
 }
 
-export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps) {
+export function FutureSelfSimulation({ scenarios }: FutureSelfSimulationProps) {
+  const readyScenarios = scenarios.filter((scenario) => scenario.projections.length > 0);
+  const [selectedScenarioId, setSelectedScenarioId] = useState<string>(readyScenarios[0]?.id ?? scenarios[0]?.id ?? "");
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
 
-  const chartData = projections.map((p) => ({
-    date: format(new Date(p.date), "MMM d"),
-    fullDate: format(new Date(p.date), "EEEE, MMM d"),
-    score: p.commitmentScore,
-    stress: p.stressLevel,
-    missed: p.missedDeadlines,
-    opportunityLoss: p.opportunityLoss,
-    careerImpact: p.careerImpact,
-    academicImpact: p.academicImpact,
-    narrative: p.narrative,
-  }));
+  const activeScenario = scenarios.find((scenario) => scenario.id === selectedScenarioId) ?? scenarios[0] ?? null;
 
-  const currentScore = chartData[0]?.score ?? 78;
-  const finalScore = chartData[chartData.length - 1]?.score ?? 42;
+  const chartData = useMemo(
+    () =>
+      activeScenario?.projections.map((projection) => ({
+        date: format(new Date(projection.date), "MMM d"),
+        fullDate: format(new Date(projection.date), "EEEE, MMM d"),
+        score: projection.commitmentScore,
+        stress: projection.stressLevel,
+        missed: projection.missedDeadlines,
+        opportunityLoss: projection.opportunityLoss,
+        careerImpact: projection.careerImpact,
+        academicImpact: projection.academicImpact,
+        narrative: projection.narrative,
+      })) ?? [],
+    [activeScenario]
+  );
+
+  if (!activeScenario) {
+    return null;
+  }
+
+  if (activeScenario.dataStatus === "insufficient_data" || chartData.length === 0) {
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+        <div className="flex items-center gap-2 text-sm font-medium text-yellow-300">
+          <AlertTriangle className="h-4 w-4" />
+          Insufficient Data
+        </div>
+        <p className="mt-3 text-sm leading-6 text-white/70">{activeScenario.summary}</p>
+        <div className="mt-4 space-y-2">
+          {activeScenario.adjustments.map((adjustment) => (
+            <div key={adjustment} className="rounded-xl border border-white/10 bg-black/20 px-4 py-3 text-xs text-white/55">
+              {adjustment}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  const currentScore = chartData[0]?.score ?? 0;
+  const finalScore = chartData[chartData.length - 1]?.score ?? 0;
   const scoreDrop = currentScore - finalScore;
 
-  const milestones = [
-    { day: 3, label: "First missed deadline", severity: "warning" as const },
-    { day: 7, label: "Stress cascade begins", severity: "danger" as const },
-    { day: 10, label: "Opportunity loss compounds", severity: "critical" as const },
-  ];
+  const milestones = chartData
+    .map((day, index) => {
+      if (day.missed > 0) {
+        return { day: index + 1, label: `${day.missed} missed deadline${day.missed === 1 ? "" : "s"}`, severity: "critical" as const };
+      }
+      if (day.stress >= 80) {
+        return { day: index + 1, label: "Stress overload", severity: "danger" as const };
+      }
+      if (day.stress >= 65) {
+        return { day: index + 1, label: "Pressure rising", severity: "warning" as const };
+      }
+      return null;
+    })
+    .filter((value, index, list): value is { day: number; label: string; severity: "warning" | "danger" | "critical" } => {
+      if (!value) return false;
+      return list.findIndex((candidate) => candidate?.label === value.label) === index;
+    })
+    .slice(0, 3);
 
   return (
     <div className="space-y-6">
-      {/* Hero projection card */}
+      <div className="flex flex-wrap gap-2">
+        {scenarios.map((scenario) => (
+          <button
+            key={scenario.id}
+            onClick={() => {
+              setSelectedScenarioId(scenario.id);
+              setSelectedDay(null);
+            }}
+            className={cn(
+              "rounded-full border px-3 py-1.5 text-xs transition",
+              scenario.id === activeScenario.id
+                ? "border-blue-400/40 bg-blue-500/15 text-blue-200"
+                : "border-white/10 bg-white/[0.03] text-white/50 hover:text-white/80"
+            )}
+          >
+            {scenario.label}
+          </button>
+        ))}
+      </div>
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -63,7 +116,15 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
         <div className="relative z-10">
           <div className="flex items-center gap-2 text-sm font-medium text-red-400">
             <TrendingDown className="h-4 w-4" />
-            Predictive Trajectory
+            {activeScenario.label}
+          </div>
+          <p className="mt-2 max-w-3xl text-xs leading-5 text-white/60">{activeScenario.summary}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {activeScenario.adjustments.map((adjustment) => (
+              <span key={adjustment} className="rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] text-white/55">
+                {adjustment}
+              </span>
+            ))}
           </div>
 
           <div className="mt-4 flex flex-wrap items-end gap-8">
@@ -79,54 +140,31 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
               </motion.p>
             </div>
 
-            <motion.div
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 }}
-            >
+            <motion.div initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.4 }}>
               <p className="text-xs text-white/40">Projected in 14 Days</p>
-              <p className="text-4xl font-bold tabular-nums text-red-400">
-                {Math.round(finalScore)}
+              <p className="text-4xl font-bold tabular-nums text-red-400">{Math.round(finalScore)}</p>
+            </motion.div>
+
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }} className="rounded-xl bg-red-500/20 px-4 py-2">
+              <p className="text-xs text-red-400">Score Change</p>
+              <p className="text-2xl font-bold tabular-nums text-red-400">
+                {scoreDrop > 0 ? `-${Math.round(scoreDrop)}` : `+${Math.round(Math.abs(scoreDrop))}`}
               </p>
             </motion.div>
 
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.6 }}
-              className="rounded-xl bg-red-500/20 px-4 py-2"
-            >
-              <p className="text-xs text-red-400">Score Drop</p>
-              <p className="text-2xl font-bold tabular-nums text-red-400">-{Math.round(scoreDrop)}</p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.8 }}
-              className="rounded-xl bg-yellow-500/20 px-4 py-2"
-            >
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.8 }} className="rounded-xl bg-yellow-500/20 px-4 py-2">
               <p className="text-xs text-yellow-400">Projected Missed Deadlines</p>
-              <p className="text-2xl font-bold tabular-nums text-yellow-400">
-                +{chartData[chartData.length - 1]?.missed ?? 0}
-              </p>
+              <p className="text-2xl font-bold tabular-nums text-yellow-400">{chartData[chartData.length - 1]?.missed ?? 0}</p>
             </motion.div>
           </div>
         </div>
       </motion.div>
 
-      {/* Main chart */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15 }}
-      >
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
         <Card>
           <CardHeader>
             <CardTitle>14-Day Trajectory</CardTitle>
-            <CardDescription>
-              If current behavior continues — stress compounds, score declines, deadlines slip
-            </CardDescription>
+            <CardDescription>Projection generated from current logged workload, progress, and observed execution pace</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-72">
@@ -143,28 +181,9 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "#ffffff40", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    interval={1}
-                  />
-                  <YAxis
-                    yAxisId="left"
-                    tick={{ fill: "#ffffff40", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={[30, 100]}
-                  />
-                  <YAxis
-                    yAxisId="right"
-                    orientation="right"
-                    tick={{ fill: "#ffffff40", fontSize: 10 }}
-                    axisLine={false}
-                    tickLine={false}
-                    domain={[0, 100]}
-                  />
+                  <XAxis dataKey="date" tick={{ fill: "#ffffff40", fontSize: 10 }} axisLine={false} tickLine={false} interval={1} />
+                  <YAxis yAxisId="left" tick={{ fill: "#ffffff40", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fill: "#ffffff40", fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} />
                   <Tooltip
                     contentStyle={{
                       background: "rgba(0,0,0,0.9)",
@@ -174,9 +193,7 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
                     }}
                     labelStyle={{ color: "#ffffff80" }}
                   />
-                  <Legend
-                    wrapperStyle={{ fontSize: "11px", color: "#ffffff60" }}
-                  />
+                  <Legend wrapperStyle={{ fontSize: "11px", color: "#ffffff60" }} />
                   <Area
                     yAxisId="left"
                     type="monotone"
@@ -188,54 +205,29 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
                     dot={{ r: 3, fill: "#3b82f6" }}
                     activeDot={{ r: 5, stroke: "#3b82f6", strokeWidth: 2 }}
                   />
-                  <Area
-                    yAxisId="right"
-                    type="monotone"
-                    dataKey="stress"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    strokeDasharray="6 3"
-                    fill="url(#stressGrad)"
-                    name="Stress Level"
-                    dot={false}
-                  />
+                  <Area yAxisId="right" type="monotone" dataKey="stress" stroke="#ef4444" strokeWidth={2} strokeDasharray="6 3" fill="url(#stressGrad)" name="Stress Level" dot={false} />
                   <ReferenceLine
                     yAxisId="left"
                     y={60}
                     stroke="#f59e0b"
                     strokeDasharray="4 4"
                     strokeWidth={1}
-                    label={{
-                      value: "Warning Threshold",
-                      fill: "#f59e0b",
-                      fontSize: 10,
-                      position: "right",
-                    }}
+                    label={{ value: "Warning Threshold", fill: "#f59e0b", fontSize: 10, position: "right" }}
                   />
-                  {milestones.map((m) => {
-                    const milestoneData = chartData[m.day - 1];
+                  {milestones.map((milestone) => {
+                    const milestoneData = chartData[milestone.day - 1];
                     if (!milestoneData) return null;
+
                     return (
                       <ReferenceLine
-                        key={m.day}
+                        key={`${milestone.label}-${milestone.day}`}
                         yAxisId="left"
                         x={milestoneData.date}
-                        stroke={
-                          m.severity === "critical"
-                            ? "#ef4444"
-                            : m.severity === "danger"
-                              ? "#f59e0b"
-                              : "#eab308"
-                        }
+                        stroke={milestone.severity === "critical" ? "#ef4444" : milestone.severity === "danger" ? "#f59e0b" : "#eab308"}
                         strokeDasharray="3 3"
                         label={{
-                          value: m.label,
-                          fill:
-                            m.severity === "critical"
-                              ? "#ef4444"
-                              : m.severity === "danger"
-                                ? "#f59e0b"
-                                : "#eab308",
+                          value: milestone.label,
+                          fill: milestone.severity === "critical" ? "#ef4444" : milestone.severity === "danger" ? "#f59e0b" : "#eab308",
                           fontSize: 9,
                           position: "top",
                         }}
@@ -246,17 +238,17 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
               </ResponsiveContainer>
             </div>
 
-            {/* Interactive day selector */}
             <div className="mt-4 grid grid-cols-7 gap-1">
-              {chartData.map((d, i) => {
-                const isSelected = selectedDay === i;
-                const isToday = i === 0;
+              {chartData.map((day, index) => {
+                const isSelected = selectedDay === index;
+                const isToday = index === 0;
+
                 return (
                   <motion.button
-                    key={i}
+                    key={index}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    onClick={() => setSelectedDay(isSelected ? null : i)}
+                    onClick={() => setSelectedDay(isSelected ? null : index)}
                     className={cn(
                       "rounded-lg border px-1 py-2 text-center text-[10px] transition-all",
                       isSelected
@@ -266,14 +258,13 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
                           : "border-white/5 bg-white/[0.02] text-white/30 hover:border-white/10"
                     )}
                   >
-                    <div className="font-medium">{d.date}</div>
-                    <div className="mt-0.5 tabular-nums">{Math.round(d.score)}</div>
+                    <div className="font-medium">{day.date}</div>
+                    <div className="mt-0.5 tabular-nums">{Math.round(day.score)}</div>
                   </motion.button>
                 );
               })}
             </div>
 
-            {/* Detail panel for selected day */}
             <AnimatePresence>
               {selectedDay !== null && chartData[selectedDay] && (
                 <motion.div
@@ -294,32 +285,22 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
                     <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
                       <div className="rounded-lg bg-white/5 p-2 text-center">
                         <div className="text-xs text-white/40">Score</div>
-                        <div className="text-lg font-bold tabular-nums text-blue-400">
-                          {Math.round(chartData[selectedDay].score)}
-                        </div>
+                        <div className="text-lg font-bold tabular-nums text-blue-400">{Math.round(chartData[selectedDay].score)}</div>
                       </div>
                       <div className="rounded-lg bg-white/5 p-2 text-center">
                         <div className="text-xs text-white/40">Stress</div>
-                        <div className="text-lg font-bold tabular-nums text-red-400">
-                          {chartData[selectedDay].stress}%
-                        </div>
+                        <div className="text-lg font-bold tabular-nums text-red-400">{chartData[selectedDay].stress}%</div>
                       </div>
                       <div className="rounded-lg bg-white/5 p-2 text-center">
                         <div className="text-xs text-white/40">Missed</div>
-                        <div className="text-lg font-bold tabular-nums text-yellow-400">
-                          {chartData[selectedDay].missed}
-                        </div>
+                        <div className="text-lg font-bold tabular-nums text-yellow-400">{chartData[selectedDay].missed}</div>
                       </div>
                       <div className="rounded-lg bg-white/5 p-2 text-center">
                         <div className="text-xs text-white/40">Opportunity</div>
-                        <div className="text-xs font-bold text-violet-400">
-                          {chartData[selectedDay].opportunityLoss}
-                        </div>
+                        <div className="text-xs font-bold text-violet-400">{chartData[selectedDay].opportunityLoss}</div>
                       </div>
                     </div>
-                    <p className="mt-3 text-xs text-white/60 italic">
-                      &ldquo;{chartData[selectedDay].narrative}&rdquo;
-                    </p>
+                    <p className="mt-3 text-xs italic text-white/60">&ldquo;{chartData[selectedDay].narrative}&rdquo;</p>
                     <div className="mt-2 flex gap-3 text-[10px] text-white/40">
                       <span>{chartData[selectedDay].careerImpact}</span>
                       <span>{chartData[selectedDay].academicImpact}</span>
@@ -332,7 +313,6 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
         </Card>
       </motion.div>
 
-      {/* Timeline narrative */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -344,46 +324,37 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
           Failure Cascade Timeline
         </div>
         <div className="mt-4 space-y-3">
-          {chartData.filter((_, i) => i === 2 || i === 5 || i === 8 || i === 12).map((d, i) => (
+          {chartData.filter((_, index) => index === 2 || index === 5 || index === 8 || index === 12).map((day, index) => (
             <motion.div
-              key={i}
+              key={index}
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.4 + i * 0.1 }}
+              transition={{ delay: 0.4 + index * 0.1 }}
               className={cn(
                 "relative rounded-xl border p-4 pl-8",
-                i === 0
-                  ? "border-yellow-500/20 bg-yellow-500/10"
-                  : i >= 2
-                    ? "border-red-500/20 bg-red-500/10"
-                    : "border-orange-500/20 bg-orange-500/10"
+                day.missed > 0 ? "border-red-500/20 bg-red-500/10" : day.stress >= 65 ? "border-orange-500/20 bg-orange-500/10" : "border-yellow-500/20 bg-yellow-500/10"
               )}
             >
               <div
                 className={cn(
                   "absolute left-3 top-4 h-2 w-2 rounded-full",
-                  i === 0
-                    ? "bg-yellow-400"
-                    : i >= 2
-                      ? "bg-red-400"
-                      : "bg-orange-400"
+                  day.missed > 0 ? "bg-red-400" : day.stress >= 65 ? "bg-orange-400" : "bg-yellow-400"
                 )}
               />
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">{d.fullDate}</span>
-                <span className="text-[10px] text-white/40">Score: {Math.round(d.score)}</span>
+                <span className="text-sm font-medium">{day.fullDate}</span>
+                <span className="text-[10px] text-white/40">Score: {Math.round(day.score)}</span>
               </div>
-              <div className="mt-1 text-xs text-white/60">{d.narrative}</div>
+              <div className="mt-1 text-xs text-white/60">{day.narrative}</div>
               <div className="mt-1.5 flex gap-2 text-[10px] text-white/40">
-                <span>Stress: {d.stress}%</span>
-                <span>Missed: {d.missed}</span>
-                <span>{d.opportunityLoss}</span>
+                <span>Stress: {day.stress}%</span>
+                <span>Missed: {day.missed}</span>
+                <span>{day.opportunityLoss}</span>
               </div>
             </motion.div>
           ))}
         </div>
 
-        {/* Rescue call to action */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -391,9 +362,9 @@ export function FutureSelfSimulation({ projections }: FutureSelfSimulationProps)
           className="mt-6 rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 text-center"
         >
           <Brain className="mx-auto h-6 w-6 text-blue-400" />
-          <p className="mt-2 text-sm font-medium text-blue-400">This trajectory is preventable</p>
+          <p className="mt-2 text-sm font-medium text-blue-400">This trajectory is adjustable</p>
           <p className="mt-1 text-xs text-blue-300/60">
-            Activating rescue mode now recovers 34% of the projected score drop. The first 4 hours are critical.
+            Compare the rescue and optimized scenarios to see how much the current outcome depends on protected focus and reduced fragmentation.
           </p>
         </motion.div>
       </motion.div>

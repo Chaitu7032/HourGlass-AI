@@ -14,12 +14,11 @@ import {
   Mic,
   ChevronLeft,
   ChevronRight,
-  LogOut,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { useAuth } from "@/components/auth/auth-provider";
-import { Button } from "@/components/ui/button";
 
 const navItems = [
   { href: "/dashboard", label: "Mission Control", icon: LayoutDashboard },
@@ -28,6 +27,7 @@ const navItems = [
   { href: "/dashboard/future-self", label: "Future Self", icon: TrendingDown },
   { href: "/dashboard/rescue", label: "Rescue Mode", icon: Shield },
   { href: "/dashboard/chat", label: "AI Chief of Staff", icon: MessageSquare },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {

@@ -12,6 +12,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   type DocumentData,
   type QueryConstraint,
@@ -282,19 +283,23 @@ export function useUserTasks() {
 
 export async function createUserTask(
   userId: string,
-  task: Omit<Task, "id" | "createdAt" | "updatedAt">
+  task: Omit<Task, "id" | "createdAt" | "updatedAt"> & { id?: string }
 ) {
   const db = getFirebaseDb();
   if (!db) throw new Error("Firebase not configured");
 
   const now = new Date().toISOString();
-  const docRef = await addDoc(collection(db, COLLECTIONS.users, userId, COLLECTIONS.tasks), {
+  const taskId = task.id ?? doc(collection(db, COLLECTIONS.users, userId, COLLECTIONS.tasks)).id;
+  const docRef = doc(db, COLLECTIONS.users, userId, COLLECTIONS.tasks, taskId);
+
+  await setDoc(docRef, {
     ...task,
+    id: taskId,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });
 
-  return { id: docRef.id, ...task, createdAt: now, updatedAt: now } as Task;
+  return { ...task, id: taskId, createdAt: now, updatedAt: now } as Task;
 }
 
 export function useLatestOrchestration() {

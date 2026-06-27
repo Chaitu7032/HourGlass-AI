@@ -1,7 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { Task, OrchestrationResult } from "@/types";
+import type { OrchestrationResult, Task } from "@/types";
 import { runOrchestration } from "./orchestrator";
-import { ORCHESTRATOR_PROMPT, AGENT_PROMPTS } from "./prompts";
+import { AGENT_PROMPTS, ORCHESTRATOR_PROMPT } from "./prompts";
 
 const MODEL = "gemini-2.5-flash";
 
@@ -12,9 +12,7 @@ function getGenAI() {
 }
 
 /** Enhance orchestration with Gemini reasoning when API key is available */
-export async function runOrchestrationWithGemini(
-  tasks: Task[]
-): Promise<OrchestrationResult> {
+export async function runOrchestrationWithGemini(tasks: Task[]): Promise<OrchestrationResult> {
   const base = await runOrchestration(tasks);
   const genAI = getGenAI();
 
@@ -29,10 +27,10 @@ export async function runOrchestrationWithGemini(
     const prompt = `Given this execution analysis, provide an enhanced executive summary and voice coach message.
 Be specific, calm, and actionable. Reference actual task names and probabilities.
 
-Tasks: ${JSON.stringify(tasks.map((t) => ({ title: t.title, deadline: t.deadline, hours: t.estimatedHours - t.completedHours })))}
-Risk assessments: ${JSON.stringify(base.riskAssessments.map((r) => ({ task: r.taskTitle, prob: r.failureProbability, reasoning: r.reasoning })))}
+Tasks: ${JSON.stringify(tasks.map((task) => ({ title: task.title, deadline: task.deadline, hours: task.estimatedHours - task.completedHours })))}
+Risk assessments: ${JSON.stringify(base.riskAssessments.map((assessment) => ({ task: assessment.taskTitle, prob: assessment.failureProbability, reasoning: assessment.reasoning })))}
 Capacity: ${base.energyProfile.totalFreeHours}h available, ${base.energyProfile.productiveHours.toFixed(1)}h productive
-Negotiation: ${base.negotiationOptions.find((n) => n.recommended)?.scenario}
+Negotiation: ${base.negotiationOptions.find((option) => option.recommended)?.scenario}
 
 Respond as JSON: { "executiveSummary": string, "voiceCoachMessage": string }`;
 
@@ -44,6 +42,7 @@ Respond as JSON: { "executiveSummary": string, "voiceCoachMessage": string }`;
         executiveSummary?: string;
         voiceCoachMessage?: string;
       };
+
       return {
         ...base,
         executiveSummary: enhanced.executiveSummary ?? base.executiveSummary,
@@ -57,10 +56,7 @@ Respond as JSON: { "executiveSummary": string, "voiceCoachMessage": string }`;
   return base;
 }
 
-export async function chatWithGemini(
-  message: string,
-  context: OrchestrationResult | null
-): Promise<string> {
+export async function chatWithGemini(message: string, context: OrchestrationResult | null): Promise<string> {
   const genAI = getGenAI();
 
   if (!genAI) {
@@ -77,7 +73,7 @@ Reference specific tasks, probabilities, and rescue actions when relevant.`,
     });
 
     const contextBlock = context
-      ? `\nCurrent orchestration context:\n${context.executiveSummary}\nRisk: ${context.riskAssessments.map((r) => `${r.taskTitle}: ${Math.round(r.failureProbability * 100)}%`).join(", ")}`
+      ? `\nCurrent orchestration context:\n${context.executiveSummary}\nRisk: ${context.riskAssessments.map((assessment) => `${assessment.taskTitle}: ${Math.round(assessment.failureProbability * 100)}%`).join(", ")}`
       : "";
 
     const result = await model.generateContent(`${contextBlock}\n\nUser: ${message}`);
@@ -89,25 +85,35 @@ Reference specific tasks, probabilities, and rescue actions when relevant.`,
 
 function getFallbackChatResponse(message: string, context: OrchestrationResult | null): string {
   const lower = message.toLowerCase();
+  const highestRisk = context?.riskAssessments
+    ? [...context.riskAssessments].sort((a, b) => b.failureProbability - a.failureProbability)[0]
+    : null;
+  const recommendedScenario = context?.negotiationOptions.find((option) => option.recommended);
+
   if (lower.includes("rescue") || lower.includes("help")) {
     return context?.rescuePlans[0]
-      ? `Rescue mode is active for ${context.rescuePlans.length} task(s). Start with tonight's 90-minute focus block on your highest-risk commitment. I've cleared your calendar from 8–10 PM.`
+      ? `Rescue mode is active for ${context.rescuePlans.length} commitment(s). Start with ${context.rescuePlans[0].roadmap[0]?.title ?? "the first rescue step"} and then work through the remaining protected actions.`
       : "No active rescue plans. Add your commitments and I'll analyze failure risk immediately.";
   }
+
   if (lower.includes("negotiate") || lower.includes("priority")) {
-    const rec = context?.negotiationOptions.find((n) => n.recommended);
-    return rec
-      ? `I recommend "${rec.scenario}": keep ${rec.tradeoffs.keep.join(" and ")}, defer ${rec.tradeoffs.defer.join(", ")}. ${rec.reasoning}`
+    return recommendedScenario
+      ? `I recommend "${recommendedScenario.scenario}": keep ${recommendedScenario.tradeoffs.keep.join(" and ") || "the currently protected commitments"}, defer ${recommendedScenario.tradeoffs.defer.join(", ") || "nothing yet"}. ${recommendedScenario.reasoning}`
       : "Run an orchestration first so I can assess your capacity gap.";
   }
+
   if (lower.includes("future") || lower.includes("what if")) {
+    const currentScenario = context?.futureScenarios.find((scenario) => scenario.mode === "current");
     return context
-      ? "If current behavior continues, you'll miss 2+ deadlines within 7 days and your commitment score drops to 42. Activating rescue now prevents the cascade."
+      ? currentScenario?.projections[0]?.narrative
+        ? `${currentScenario.projections[0].narrative} Review the Future Self simulation for the day-by-day forecast.`
+        : currentScenario?.summary ?? "I need a fresh execution snapshot before I can project your trajectory."
       : "I can simulate your future trajectory once you add commitments.";
   }
+
   return context
-    ? `${context.executiveSummary.slice(0, 200)}... Ask me about rescue plans, negotiation options, or your future self projection.`
-    : "I'm Hourglass — your AI Chief of Staff. I predict missed deadlines before they happen. Add your commitments or run the demo to begin.";
+    ? `${highestRisk ? `${highestRisk.taskTitle} is currently the highest-risk commitment at ${Math.round(highestRisk.failureProbability * 100)}%. ` : ""}${context.executiveSummary} Ask me about rescue plans, negotiation options, or your future self projection.`
+    : "I'm Hourglass, your AI Chief of Staff. Add your commitments and I will compute risk, workload pressure, and trade-offs from real data.";
 }
 
 export { AGENT_PROMPTS, ORCHESTRATOR_PROMPT };
