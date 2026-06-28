@@ -14,7 +14,7 @@ function getLocalProfile(): ExecutionProfile | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = window.localStorage.getItem(EXECUTION_PROFILE_KEY);
-    return raw ? JSON.parse(raw) : null;
+    return raw ? (JSON.parse(raw) as ExecutionProfile) : null;
   } catch {
     return null;
   }
@@ -25,17 +25,17 @@ function setLocalProfile(profile: ExecutionProfile) {
   try {
     window.localStorage.setItem(EXECUTION_PROFILE_KEY, JSON.stringify(profile));
   } catch {
-    // Best-effort
+    // Best-effort cache only
   }
 }
 
+// ─── useExecutionProfile ──────────────────────────────────────────────────
 export function useExecutionProfile() {
   const { user } = useAuth();
   const userId = user?.uid;
 
   const loadProfile = useCallback(async (): Promise<ExecutionProfile | null> => {
     if (!userId) return null;
-
     try {
       const profile = await getExecutionProfile(userId);
       setLocalProfile(profile);
@@ -49,8 +49,22 @@ export function useExecutionProfile() {
     async (profile: ExecutionProfile): Promise<void> => {
       if (!userId) throw new Error("Not authenticated");
 
-      await saveExecutionProfile(userId, profile);
+      // 1. Snapshot current local state for rollback
+      const previousProfile = getLocalProfile();
+
+      // 2. Optimistic update — write immediately so UI reflects changes
       setLocalProfile(profile);
+
+      try {
+        // 3. Persist to Firestore
+        await saveExecutionProfile(userId, profile);
+      } catch (saveError) {
+        // 4. Rollback on failure
+        if (previousProfile) {
+          setLocalProfile(previousProfile);
+        }
+        throw saveError; // Re-raise so callers can show error messages
+      }
     },
     [userId]
   );
@@ -62,6 +76,7 @@ export function useExecutionProfile() {
   };
 }
 
+// ─── useIntelligence ──────────────────────────────────────────────────────
 export function useIntelligence(): {
   report: IntelligenceReport | null;
   executionProfile: ExecutionProfile | null;
@@ -70,9 +85,7 @@ export function useIntelligence(): {
   const { user } = useAuth();
   const { tasks } = useHourglassStore();
 
-  const executionProfile = useMemo(() => {
-    return getLocalProfile();
-  }, []);
+  const executionProfile = getLocalProfile();
 
   const report = useMemo(() => {
     if (!executionProfile || executionProfile.workingDays.length === 0) {
@@ -86,15 +99,17 @@ export function useIntelligence(): {
     );
   }, [executionProfile, tasks]);
 
-  const refresh = useCallback(async () => {
-    if (!user?.uid) return;
+  const userId = user?.uid;
+
+  const refresh = async () => {
+    if (!userId) return;
     try {
-      const profile = await getExecutionProfile(user.uid);
+      const profile = await getExecutionProfile(userId);
       setLocalProfile(profile);
     } catch {
-      // Silent fail
+      // Silent fail — cached value remains
     }
-  }, [user?.uid]);
+  };
 
   return {
     report,

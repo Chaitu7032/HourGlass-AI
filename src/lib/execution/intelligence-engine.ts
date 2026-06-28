@@ -127,11 +127,6 @@ function formatMinutesToHour(minutes: number): number {
   return Math.round((minutes / 60) * 10) / 10;
 }
 
-function getDayName(index: number): string {
-  const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-  return days[index];
-}
-
 function getNextDateForDay(dayName: string): string {
   const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const targetIndex = days.indexOf(dayName);
@@ -392,7 +387,7 @@ export function computeExecutionTimeline(
   );
 
   const tasksByWeek: ExecutionTimeline["tasksByWeek"] = [];
-  let currentWeekStart = new Date();
+  const currentWeekStart = new Date();
   currentWeekStart.setDate(currentWeekStart.getDate() - currentWeekStart.getDay()); // Start from Sunday
   currentWeekStart.setHours(0, 0, 0, 0);
 

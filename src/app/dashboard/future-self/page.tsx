@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowLeft, TrendingDown, Calendar, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, TrendingDown, Calendar, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { DashboardShell } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import { useHourglassStore } from "@/lib/store/hourglass-store";

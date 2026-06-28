@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import {
@@ -9,24 +9,24 @@ import {
   Brain,
   CalendarDays,
   Clock3,
-  Hourglass,
-  Play,
   Plus,
   Sparkles,
   Zap,
   Settings,
 } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 import { DashboardShell } from "@/components/layout/sidebar";
 import { Button } from "@/components/ui/button";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { useAuth } from "@/components/auth/auth-provider";
-import { useExecutionProfile, useIntelligence } from "@/lib/execution/use-intelligence";
+import { useExecutionProfile } from "@/lib/execution/use-intelligence";
 import { createUserTask } from "@/lib/firebase/hooks";
 import { TaskDialog } from "@/components/dashboard/task-dialog";
-import { cn, generateId, getRiskLabel } from "@/lib/utils";
+import { cn, generateId } from "@/lib/utils";
 import { computeIntelligenceReport } from "@/lib/execution/intelligence-engine";
 import Link from "next/link";
 import type { ExecutionProfile } from "@/types/execution-profile";
+import type { OrchestrationResult } from "@/types";
 
 function formatHours(value: number) {
   return Number.isInteger(value) ? `${value}h` : `${value.toFixed(1)}h`;
@@ -93,7 +93,7 @@ function ConfidenceBadge({ value }: { value: number }) {
 export default function MissionControlPage() {
   const router = useRouter();
   const { user, profile } = useAuth();
-  const { tasks, workspaceHydrated, setTasks, orchestration, setOrchestration } = useHourglassStore();
+  const { tasks, workspaceHydrated } = useHourglassStore();
   const { loadProfile, getLocalProfile } = useExecutionProfile();
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [taskDialogError, setTaskDialogError] = useState<string | null>(null);
@@ -103,17 +103,29 @@ export default function MissionControlPage() {
 
   // Load execution profile on mount
   useEffect(() => {
-    const local = getLocalProfile();
-    if (local && local.profileComplete) {
-      setExecutionProfile(local);
+    let active = true;
+
+    void (async () => {
+      const local = getLocalProfile();
+      if (local?.profileComplete) {
+        if (active) {
+          setExecutionProfile(local);
+          setProfileLoading(false);
+        }
+        return;
+      }
+
+      const loaded = await loadProfile();
+      if (!active) return;
+
+      if (loaded) setExecutionProfile(loaded);
       setProfileLoading(false);
-    } else {
-      loadProfile().then((p) => {
-        if (p) setExecutionProfile(p);
-        setProfileLoading(false);
-      });
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [getLocalProfile, loadProfile]);
 
   // Compute intelligence report from profile + tasks
   const intelligence = useMemo(() => {
@@ -144,14 +156,12 @@ export default function MissionControlPage() {
     return [...tasks].sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())[0] ?? null;
   }, [tasks]);
 
-  const totalRequiredHours = tasks.reduce((sum, task) => sum + Math.max(0, task.estimatedHours - task.completedHours), 0);
-
   const handleAddTask = () => {
     setTaskDialogError(null);
     setTaskDialogOpen(true);
   };
 
-  const handleCreateTask = async (values: {
+  const handleCreateTask = useCallback(async (values: {
     title: string;
     description: string;
     deadline: string;
@@ -203,21 +213,36 @@ export default function MissionControlPage() {
       const nextTasks = [savedTask, ...currentTasks.filter((task) => task.id !== savedTask.id)];
       useHourglassStore.getState().setTasks(nextTasks);
       setTaskDialogOpen(false);
+
+      // Background orchestration — fire and forget so the dashboard updates
+      void fetch("/api/orchestrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tasks: nextTasks, userId: user.uid }),
+      })
+        .then(async (res) => {
+          if (!res.ok) return;
+          const result = await res.json();
+          if (result && typeof result === 'object') {
+            useHourglassStore.getState().setOrchestration(result as OrchestrationResult);
+          }
+        })
+        .catch(() => {
+          // Orchestration failure is non-critical — dashboard still shows local data
+        });
     } catch (error) {
       setTaskDialogError(error instanceof Error ? error.message : "Unable to create task.");
     } finally {
       setTaskDialogSaving(false);
     }
-  };
+  }, [user]);
 
   // Check if user needs to complete execution profile
   if (hasNoProfile) {
     return (
       <DashboardShell>
         <div className="flex flex-col items-center justify-center p-12 text-center">
-          <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500/20 to-violet-500/20">
-            <Hourglass className="h-8 w-8 text-sky-300" />
-          </div>
+          <Logo size="md" variant="light" className="mb-5" />
           <h2 className="text-xl font-semibold">Set up your Execution Profile first</h2>
           <p className="mt-2 max-w-md text-sm text-white/50">
             Hourglass needs your work schedule, energy profile, and preferences to compute real analytics.
@@ -533,13 +558,13 @@ export default function MissionControlPage() {
             animate={{ opacity: 1, y: 0 }}
             className="mx-auto mt-8 flex max-w-3xl flex-col items-center justify-center rounded-[32px] border border-white/10 bg-white/[0.04] px-6 py-16 text-center shadow-2xl shadow-black/10 backdrop-blur-2xl"
           >
-            <div className="relative mb-6 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white/10 bg-gradient-to-br from-sky-500/15 via-white/5 to-violet-500/15">
+            <div className="relative mb-6 flex items-center justify-center rounded-[28px] border border-white/10 bg-gradient-to-br from-sky-500/15 via-white/5 to-violet-500/15 px-5 py-4">
               <motion.div
                 animate={{ rotate: 360 }}
                 transition={{ repeat: Infinity, duration: 12, ease: "linear" }}
                 className="absolute inset-0 rounded-[28px] border border-sky-400/10"
               />
-              <Hourglass className="h-10 w-10 text-sky-300" />
+              <Logo size="lg" variant="light" />
             </div>
             <h2 className="text-2xl font-semibold">Your future starts today.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-white/55">

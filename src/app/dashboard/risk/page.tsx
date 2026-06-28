@@ -8,27 +8,12 @@ import { motion } from "framer-motion";
 import { BarChart3, AlertTriangle, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { useMemo } from "react";
 
 function getRiskColor(probability: number): string {
   if (probability >= 75) return "text-red-300";
   if (probability >= 50) return "text-orange-300";
   if (probability >= 25) return "text-yellow-300";
   return "text-emerald-300";
-}
-
-function getRiskBg(probability: number): string {
-  if (probability >= 75) return "bg-red-500/20 border-red-500/40";
-  if (probability >= 50) return "bg-orange-500/20 border-orange-500/40";
-  if (probability >= 25) return "bg-yellow-500/20 border-yellow-500/40";
-  return "bg-emerald-500/20 border-emerald-500/40";
-}
-
-function getRiskLabel(probability: number): string {
-  if (probability >= 75) return "Critical";
-  if (probability >= 50) return "High";
-  if (probability >= 25) return "Moderate";
-  return "Low";
 }
 
 function FailureBar({ probability, label }: { probability: number; label: string }) {

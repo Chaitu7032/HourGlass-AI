@@ -4,7 +4,7 @@ import { DashboardShell } from "@/components/layout/sidebar";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { useIntelligence } from "@/lib/execution/use-intelligence";
 import { motion } from "framer-motion";
-import { Shield, ArrowLeft, Lightbulb, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
+import { Shield, ArrowLeft, Lightbulb, CheckCircle2, Clock } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";

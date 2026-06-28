@@ -13,19 +13,34 @@ import {
   updateProfile,
   type User,
 } from "firebase/auth";
-import { createContext, useContext, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { getFirebaseAuth, isFirebaseConfigured } from "@/lib/firebase/config";
 import { completeUserOnboarding, ensureUserProfile } from "@/lib/firebase/user-profile";
+import { useHourglassStore } from "@/lib/store/hourglass-store";
 import type { UserProfile } from "@/types";
 
-const PROFILE_CACHE_PREFIX = "hourglass:profile:";
-const PROFILE_BOOTSTRAP_TIMEOUT_MS = 1500;
+// ─── Auth State Machine ────────────────────────────────────────────────────
+export type AuthStatus =
+  | "Initializing"      // Firebase SDK is bootstrapping
+  | "Unauthenticated"   // No signed-in user
+  | "Authenticated"     // User signed in, profile being loaded
+  | "ProfileIncomplete" // Signed in, onboarding not yet complete
+  | "Ready"             // Signed in + onboarding complete
+  | "ExpiredSession"    // Token stale / network failure
+  | "SigningOut";        // Sign-out in progress
 
+const PROFILE_CACHE_PREFIX = "hourglass:profile:";
+const PROFILE_BOOTSTRAP_TIMEOUT_MS = 3000;
+const TOKEN_REFRESH_INTERVAL_MS = 14 * 60 * 1000; // 14 minutes
+
+// ─── Context Interface ─────────────────────────────────────────────────────
 interface AuthContextValue {
   user: User | null;
   profile: UserProfile | null;
+  authStatus: AuthStatus;
+  /** @deprecated Use authStatus instead */
   loading: boolean;
+  /** @deprecated Use authStatus instead */
   initialized: boolean;
   profileStatus: "idle" | "loading" | "ready" | "error";
   error: string | null;
@@ -44,20 +59,25 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+// ─── Cookie Sync ───────────────────────────────────────────────────────────
 async function syncSessionCookie(user: User | null) {
-  if (!user) {
-    await fetch("/api/auth/session", { method: "DELETE" });
-    return;
+  try {
+    if (!user) {
+      await fetch("/api/auth/session", { method: "DELETE" });
+      return;
+    }
+    const token = await user.getIdToken();
+    await fetch("/api/auth/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  } catch {
+    // Session cookie sync is non-critical
   }
-
-  const token = await user.getIdToken();
-  await fetch("/api/auth/session", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
-  });
 }
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
 function getReadableError(error: unknown) {
   if (error instanceof Error) return error.message;
   return "Something went wrong while authenticating.";
@@ -86,11 +106,9 @@ function buildFallbackProfile(user: User): UserProfile {
 
 function readCachedProfile(user: User): UserProfile | null {
   if (typeof window === "undefined") return null;
-
   try {
     const raw = window.localStorage.getItem(getProfileCacheKey(user.uid));
     if (!raw) return null;
-
     const parsed = JSON.parse(raw) as Partial<UserProfile>;
     return {
       ...buildFallbackProfile(user),
@@ -107,45 +125,123 @@ function readCachedProfile(user: User): UserProfile | null {
 
 function cacheProfile(profile: UserProfile) {
   if (typeof window === "undefined") return;
-
   try {
     window.localStorage.setItem(getProfileCacheKey(profile.id), JSON.stringify(profile));
   } catch {
-    // Best-effort cache only.
+    // Best-effort cache only
   }
 }
 
 function clearProfileCache(uid?: string | null) {
   if (typeof window === "undefined") return;
-
   try {
     if (uid) {
       window.localStorage.removeItem(getProfileCacheKey(uid));
       return;
     }
-
     for (const key of Object.keys(window.localStorage)) {
       if (key.startsWith(PROFILE_CACHE_PREFIX)) {
         window.localStorage.removeItem(key);
       }
     }
   } catch {
-    // Best-effort cache cleanup only.
+    // Best-effort cleanup
   }
 }
 
+function resetWorkspaceState() {
+  useHourglassStore.getState().reset();
+}
+
+function deriveAuthStatus(
+  firebaseConfigured: boolean,
+  user: User | null,
+  profile: UserProfile | null,
+  profileStatus: "idle" | "loading" | "ready" | "error",
+  initialized: boolean,
+  signingOut: boolean,
+): AuthStatus {
+  if (!firebaseConfigured || !initialized) return "Initializing";
+  if (signingOut) return "SigningOut";
+  if (!user) return "Unauthenticated";
+  if (profileStatus === "loading") return "Authenticated";
+  if (profileStatus === "error") return "ExpiredSession";
+  if (profile && !profile.onboardingComplete) return "ProfileIncomplete";
+  if (profile && profile.onboardingComplete) return "Ready";
+  return "Authenticated";
+}
+
+// ─── Provider ─────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
   const firebaseConfigured = isFirebaseConfigured();
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(firebaseConfigured);
   const [initialized, setInitialized] = useState(!firebaseConfigured);
   const [profileStatus, setProfileStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [signingOut, setSigningOut] = useState(false);
   const [error, setError] = useState<string | null>(
     firebaseConfigured ? null : "Firebase is not configured. Add your public Firebase environment variables."
   );
+  const tokenRefreshTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const currentUserRef = useRef<User | null>(null);
 
+  // Derived auth status from state machine
+  const authStatus = deriveAuthStatus(
+    firebaseConfigured,
+    user,
+    profile,
+    profileStatus,
+    initialized,
+    signingOut,
+  );
+
+  // ─── Token Refresh Helper ────────────────────────────────────────────
+  const refreshToken = useCallback(async () => {
+    if (!currentUserRef.current) return;
+    try {
+      await currentUserRef.current.getIdToken(/* forceRefresh */ true);
+      await syncSessionCookie(currentUserRef.current);
+    } catch {
+      // If token refresh fails, mark session as expired
+      setProfileStatus("error");
+    }
+  }, []);
+
+  // ─── Session Lifecycle Listeners ────────────────────────────────────
+  useEffect(() => {
+    if (!firebaseConfigured) return;
+
+    // Refresh token when tab becomes visible again
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshToken();
+      }
+    };
+
+    // Refresh token when network comes back online
+    const handleOnline = () => {
+      void refreshToken();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("online", handleOnline);
+
+    // Proactive token refresh every 14 minutes
+    tokenRefreshTimer.current = setInterval(() => {
+      void refreshToken();
+    }, TOKEN_REFRESH_INTERVAL_MS);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("online", handleOnline);
+      if (tokenRefreshTimer.current) {
+        clearInterval(tokenRefreshTimer.current);
+      }
+    };
+  }, [firebaseConfigured, refreshToken]);
+
+  // ─── Firebase Auth Listener ──────────────────────────────────────────
   useEffect(() => {
     if (!firebaseConfigured) return;
 
@@ -157,6 +253,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onIdTokenChanged(auth, async (nextUser) => {
       setLoading(true);
       setError(null);
+      const previousUserId = currentUserRef.current?.uid ?? null;
+      currentUserRef.current = nextUser;
+
+      if (previousUserId && previousUserId !== nextUser?.uid) {
+        clearProfileCache(previousUserId);
+        resetWorkspaceState();
+      }
 
       try {
         setUser(nextUser);
@@ -165,6 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           clearProfileCache();
           setProfile(null);
           setProfileStatus("idle");
+          resetWorkspaceState();
           setLoading(false);
           setInitialized(true);
           return;
@@ -175,11 +279,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(fallbackProfile);
         setProfileStatus(cachedProfile ? "ready" : "loading");
 
-        if (cachedProfile) {
-          void syncSessionCookie(nextUser).catch(() => {
-            // Session cookie failure is non-critical; auth state is still valid.
-          });
+        // Sync session cookie without blocking
+        void syncSessionCookie(nextUser);
 
+        if (cachedProfile) {
+          // Background profile refresh without blocking UI
           void ensureUserProfile(nextUser)
             .then((nextProfile) => {
               setProfile(nextProfile);
@@ -195,10 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
-        void syncSessionCookie(nextUser).catch(() => {
-          // Session cookie failure is non-critical; auth state is still valid.
-        });
-
+        // No cache — do a timed bootstrap
         try {
           const nextProfile = await new Promise<UserProfile>((resolve, reject) => {
             const timer = window.setTimeout(
@@ -216,6 +317,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 reject(profileError);
               });
           });
+
           setProfile(nextProfile);
           cacheProfile(nextProfile);
           setProfileStatus("ready");
@@ -226,7 +328,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setError(getReadableError(profileError));
         }
       } catch (nextError) {
-        const fallbackProfile = nextUser ? readCachedProfile(nextUser) ?? buildFallbackProfile(nextUser) : null;
+        const fallbackProfile = nextUser
+          ? readCachedProfile(nextUser) ?? buildFallbackProfile(nextUser)
+          : null;
         setProfile(fallbackProfile);
         if (fallbackProfile) {
           cacheProfile(fallbackProfile);
@@ -244,9 +348,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsubscribe;
   }, [firebaseConfigured]);
 
+  // ─── Actions ─────────────────────────────────────────────────────────
   const refreshProfile = async () => {
     if (!user) return;
-
     try {
       const nextProfile = await ensureUserProfile(user);
       setProfile(nextProfile);
@@ -289,12 +393,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     const credential = await createUserWithEmailAndPassword(auth, email, password);
     await updateProfile(credential.user, { displayName: name });
-
-    const nextProfile = (await ensureUserProfile(credential.user).catch(() => buildFallbackProfile(credential.user))) as UserProfile;
-    setProfile(nextProfile);
+    const nextProfile = await ensureUserProfile(credential.user).catch(
+      () => buildFallbackProfile(credential.user)
+    );
+    setProfile(nextProfile as UserProfile);
     setProfileStatus("ready");
-    cacheProfile(nextProfile);
-    router.refresh();
+    cacheProfile(nextProfile as UserProfile);
   };
 
   const sendPasswordReset = async (email: string) => {
@@ -307,14 +411,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOutUser = async () => {
     const auth = getFirebaseAuth();
     if (!auth) throw new Error("Firebase is not configured.");
+    setSigningOut(true);
     setError(null);
-    await signOut(auth);
-    clearProfileCache(user?.uid);
-    setProfile(null);
-    setProfileStatus("idle");
-    router.push("/auth");
+    try {
+      await signOut(auth);
+      clearProfileCache(user?.uid);
+      setProfile(null);
+      setProfileStatus("idle");
+      resetWorkspaceState();
+      await syncSessionCookie(null);
+    } finally {
+      setSigningOut(false);
+    }
   };
 
+  /**
+   * Called after the basic onboarding step (name/goal/timezone).
+   * Does NOT navigate — the calling page controls routing to avoid
+   * premature redirects before the execution profile step.
+   */
   const finishOnboarding = async ({
     displayName,
     primaryGoal,
@@ -335,25 +450,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updatedAt: new Date().toISOString(),
     };
 
+    // Optimistic update
     setProfile(nextProfile);
     cacheProfile(nextProfile);
     setProfileStatus("ready");
 
-    void completeUserOnboarding(user.uid, { displayName, primaryGoal, timezone }).catch((writeError) => {
+    // Persist to Firestore (non-blocking — UI already updated)
+    try {
+      await completeUserOnboarding(user.uid, { displayName, primaryGoal, timezone });
+      await refreshProfile();
+    } catch (writeError) {
       setError(getReadableError(writeError));
       setProfileStatus("error");
-    });
+      throw writeError;
+    }
 
     if (user.displayName !== displayName) {
       void updateProfile(user, { displayName }).catch(() => undefined);
     }
 
-    router.replace("/activation");
+    // NOTE: No router.replace here — the onboarding page controls routing
+    // so the user can complete the execution profile step first.
   };
 
   const value: AuthContextValue = {
     user,
     profile,
+    authStatus,
     loading,
     initialized,
     profileStatus,

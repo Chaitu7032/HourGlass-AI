@@ -3,7 +3,8 @@
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, Hourglass, KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, KeyRound, Mail, ShieldCheck } from "lucide-react";
+import { Logo } from "@/components/ui/logo";
 import { useAuth } from "@/components/auth/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -28,6 +29,7 @@ function AuthPageContent() {
     profile,
     loading,
     initialized,
+    authStatus,
     profileStatus,
     error,
     signInWithEmail,
@@ -44,9 +46,11 @@ function AuthPageContent() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (!initialized || loading || profileStatus === "loading" || !user) return;
+    if (!initialized || loading || profileStatus === "loading") return;
+    if (authStatus === "Initializing" || authStatus === "Unauthenticated" || authStatus === "SigningOut") return;
+    if (!user) return;
     router.replace(profile?.onboardingComplete ? next : "/onboarding");
-  }, [initialized, loading, next, profile?.onboardingComplete, profileStatus, router, user]);
+  }, [authStatus, initialized, loading, next, profile?.onboardingComplete, profileStatus, router, user]);
 
   const headline = useMemo(() => {
     if (mode === "reset") return "Reset your password";
@@ -111,8 +115,7 @@ function AuthPageContent() {
           className="max-w-xl"
         >
           <div className="inline-flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white/65">
-            <Hourglass className="h-4 w-4 text-sky-300" />
-            Production authentication with Firebase
+            <Logo size="sm" variant="light" />
           </div>
 
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-5xl">

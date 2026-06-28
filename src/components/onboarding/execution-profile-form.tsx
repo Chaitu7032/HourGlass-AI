@@ -14,7 +14,6 @@ import {
   Brain,
   Coffee,
   Calendar,
-  AlertTriangle,
   Gauge,
   Bell,
   type LucideIcon,
@@ -141,6 +140,7 @@ interface ExecutionProfileFormProps {
 export function ExecutionProfileForm({ initialProfile, onSave, onSkip }: ExecutionProfileFormProps) {
   const [currentStep, setCurrentStep] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [profile, setProfile] = useState<ExecutionProfile>(() => ({
     ...createEmptyExecutionProfile(),
     ...initialProfile,
@@ -188,12 +188,13 @@ export function ExecutionProfileForm({ initialProfile, onSave, onSkip }: Executi
     if (currentStep < STEPS.length - 1) {
       setCurrentStep((s) => s + 1);
     } else {
-      handleSave();
+      void handleSave();
     }
   };
 
   const handleSave = async () => {
     setSaving(true);
+    setSaveError(null);
     try {
       const completeProfile: ExecutionProfile = {
         ...profile,
@@ -201,6 +202,10 @@ export function ExecutionProfileForm({ initialProfile, onSave, onSkip }: Executi
         lastUpdated: new Date().toISOString(),
       };
       await onSave(completeProfile);
+      // Advance to the success screen
+      setCurrentStep(STEPS.length);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save profile. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -792,41 +797,51 @@ export function ExecutionProfileForm({ initialProfile, onSave, onSkip }: Executi
       <AnimatePresence mode="wait">{renderStep()}</AnimatePresence>
 
       {/* Navigation */}
-      <div className="flex items-center justify-between pt-4">
-        <div>
-          {currentStep > 0 ? (
-            <Button
-              variant="outline"
-              onClick={() => setCurrentStep((s) => s - 1)}
-              className="border-white/10"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </Button>
-          ) : onSkip ? (
-            <Button variant="outline" onClick={onSkip} className="border-white/10 text-white/50">
-              Skip for now
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex items-center gap-2">
-          {currentStep === STEPS.length - 1 ? (
-            <Button onClick={handleSave} disabled={saving} className="min-w-[180px]">
-              {saving ? (
-                "Saving..."
-              ) : (
-                <>
-                  Save Profile
-                  <Check className="h-4 w-4" />
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button onClick={handleNext} disabled={!canProceed} className="min-w-[120px]">
-              Continue
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          )}
+      <div className="flex flex-col gap-3 pt-4">
+        {saveError && (
+          <p className="rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-300">
+            {saveError}
+          </p>
+        )}
+        <div className="flex items-center justify-between">
+          <div>
+            {currentStep > 0 ? (
+              <Button
+                variant="outline"
+                onClick={() => setCurrentStep((s) => s - 1)}
+                className="border-white/10"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Back
+              </Button>
+            ) : onSkip ? (
+              <Button variant="outline" onClick={onSkip} className="border-white/10 text-white/50">
+                Skip for now
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-2">
+            {currentStep === STEPS.length - 1 ? (
+              <Button onClick={() => void handleSave()} disabled={saving} className="min-w-[180px]">
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                    Saving profile...
+                  </span>
+                ) : (
+                  <>
+                    Save Profile
+                    <Check className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            ) : (
+              <Button onClick={handleNext} disabled={!canProceed} className="min-w-[120px]">
+                Continue
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

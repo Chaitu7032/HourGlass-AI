@@ -2,6 +2,7 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { OrchestrationResult, Task } from "@/types";
 import { runOrchestration } from "./orchestrator";
 import { AGENT_PROMPTS, ORCHESTRATOR_PROMPT } from "./prompts";
+import { formatAIContextForPrompt } from "@/lib/ai/ai-context";
 
 const MODEL = "gemini-2.5-flash";
 
@@ -27,10 +28,40 @@ export async function runOrchestrationWithGemini(tasks: Task[]): Promise<Orchest
     const prompt = `Given this execution analysis, provide an enhanced executive summary and voice coach message.
 Be specific, calm, and actionable. Reference actual task names and probabilities.
 
-Tasks: ${JSON.stringify(tasks.map((task) => ({ title: task.title, deadline: task.deadline, hours: task.estimatedHours - task.completedHours })))}
-Risk assessments: ${JSON.stringify(base.riskAssessments.map((assessment) => ({ task: assessment.taskTitle, prob: assessment.failureProbability, reasoning: assessment.reasoning })))}
-Capacity: ${base.energyProfile.totalFreeHours}h available, ${base.energyProfile.productiveHours.toFixed(1)}h productive
-Negotiation: ${base.negotiationOptions.find((option) => option.recommended)?.scenario}
+${formatAIContextForPrompt({
+  userProfile: null,
+  executionProfile: null,
+  currentDate: new Date().toISOString().split("T")[0],
+  currentTime: new Date().toTimeString().split(" ")[0],
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  currentCapacity: base.energyProfile.totalFreeHours,
+  riskScore: base.riskAssessments.reduce((max, r) => Math.max(max, r.failureProbability), 0),
+  remainingCapacity: base.energyProfile.totalFreeHours,
+  executionHealth: `${Math.round(base.commitmentScore.overall)}/100`,
+  missionControlMetrics: {
+    totalTasks: tasks.length,
+    completedTasks: tasks.filter(t => t.completedHours >= t.estimatedHours).length,
+    overdueTasks: base.riskAssessments.filter(r => r.failureProbability >= 0.65).length,
+    completionRate: tasks.length > 0 ? (tasks.filter(t => t.completedHours >= t.estimatedHours).length / tasks.length) * 100 : 0,
+    averageProgress: tasks.length > 0 ? tasks.reduce((sum, t) => sum + (t.completedHours / t.estimatedHours), 0) / tasks.length : 0,
+  },
+  plannerOutput: {
+    suggestions: [],
+    executionStrategy: base.executiveSummary,
+    recommendedWorkSessions: Math.ceil(base.energyProfile.totalFreeHours / 1.5),
+  },
+  recentProgress: tasks.slice(0, 5),
+  completedTasks: tasks.filter(t => t.completedHours >= t.estimatedHours),
+  blockedTasks: tasks.filter(t => t.dependencies && t.dependencies.length > 0),
+  historicalCompletion: {
+    averageCompletionRate: 0,
+    trend: base.commitmentScore.trend,
+    velocity: base.behaviorPatterns.executionVelocity,
+  },
+  conversationHistory: [],
+  currentScreen: "orchestration",
+  userIntent: "orchestration_enhancement",
+})}
 
 Respond as JSON: { "executiveSummary": string, "voiceCoachMessage": string }`;
 

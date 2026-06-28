@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import { Logo } from "@/components/ui/logo";
 import {
   LayoutDashboard,
   AlertTriangle,
@@ -10,7 +11,6 @@ import {
   MessageSquare,
   TrendingDown,
   Shield,
-  Hourglass,
   Mic,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +19,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { useAuth } from "@/components/auth/auth-provider";
+
 
 const navItems = [
   { href: "/dashboard", label: "Mission Control", icon: LayoutDashboard },
@@ -52,14 +53,8 @@ export function Sidebar() {
             transition={{ type: "spring", damping: 28, stiffness: 220, mass: 0.8 }}
             className="fixed left-0 top-0 z-40 flex h-full w-[240px] flex-col border-r border-white/10 bg-zinc-950/80 backdrop-blur-2xl lg:w-[220px] xl:w-[240px]"
           >
-            <div className="flex items-center gap-2.5 border-b border-white/10 px-4 py-4 lg:px-5">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-violet-600 shadow-lg shadow-blue-500/25">
-                <Hourglass className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-sm font-semibold text-white truncate">Hourglass AI</h1>
-                <p className="text-[9px] text-white/40 truncate">Predictive Execution OS</p>
-              </div>
+            <div className="border-b border-white/10 px-4 py-4 lg:px-5">
+              <Logo size="md" variant="light" />
             </div>
 
             {rescueModeActive && (

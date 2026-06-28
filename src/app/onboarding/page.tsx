@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { ArrowRight, CheckCircle2, Sparkles, Target, Hourglass } from "lucide-react";
+import { ArrowRight, CheckCircle2, Sparkles, Target } from "lucide-react";
 import { AuthGate } from "@/components/auth/auth-gate";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useExecutionProfile } from "@/lib/execution/use-intelligence";
@@ -40,7 +40,7 @@ export default function OnboardingPage() {
         });
       });
     }
-  }, [profile?.onboardingComplete, router, user?.uid]);
+  }, [profile, router, user?.uid]);
 
   const resolvedDisplayName = displayName ?? profile?.displayName ?? user?.displayName ?? "";
   const resolvedPrimaryGoal = primaryGoal ?? profile?.primaryGoal ?? "";

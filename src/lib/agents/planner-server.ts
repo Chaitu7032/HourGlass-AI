@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { PlannerSuggestion } from "@/types";
 import type { CommitmentDraft } from "./planner-core";
-import { buildPlannerSuggestion } from "./planner-core";
 
 const MODEL = "gemini-2.5-flash";
 
@@ -23,10 +22,11 @@ function safeJsonParse(value: string): Partial<PlannerSuggestion> | null {
 }
 
 export async function analyzeCommitmentDraft(draft: CommitmentDraft): Promise<PlannerSuggestion> {
-  const fallback = buildPlannerSuggestion(draft);
   const genAI = getGenAI();
 
-  if (!genAI) return fallback;
+  if (!genAI) {
+    throw new Error("Gemini is not configured");
+  }
 
   try {
     const model = genAI.getGenerativeModel({
@@ -46,27 +46,24 @@ Return strictly valid JSON.`;
     const result = await model.generateContent(prompt);
     const parsed = safeJsonParse(result.response.text());
 
-    if (!parsed) return fallback;
+    if (!parsed) {
+      throw new Error("Planner analysis returned invalid data");
+    }
 
     return {
-      ...fallback,
       ...parsed,
       source: "Gemini",
-      confidence: typeof parsed.confidence === "number" ? parsed.confidence : fallback.confidence,
-      estimatedHours: typeof parsed.estimatedHours === "number" ? parsed.estimatedHours : fallback.estimatedHours,
-      estimatedHoursConfidence:
-        typeof parsed.estimatedHoursConfidence === "number"
-          ? parsed.estimatedHoursConfidence
-          : fallback.estimatedHoursConfidence,
-      complexity: typeof parsed.complexity === "number" ? parsed.complexity : fallback.complexity,
+      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
+      estimatedHours: typeof parsed.estimatedHours === "number" ? parsed.estimatedHours : 1,
+      estimatedHoursConfidence: typeof parsed.estimatedHoursConfidence === "number" ? parsed.estimatedHoursConfidence : 0.5,
+      complexity: typeof parsed.complexity === "number" ? parsed.complexity : 1,
       subtaskCount:
-        typeof parsed.subtaskCount === "number" ? parsed.subtaskCount : parsed.subtasks?.length ?? fallback.subtaskCount,
-      subtasks: Array.isArray(parsed.subtasks) && parsed.subtasks.length ? parsed.subtasks : fallback.subtasks,
-      assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length ? parsed.assumptions : fallback.assumptions,
+        typeof parsed.subtaskCount === "number" ? parsed.subtaskCount : Array.isArray(parsed.subtasks) ? parsed.subtasks.length : 0,
+      subtasks: Array.isArray(parsed.subtasks) && parsed.subtasks.length ? parsed.subtasks : [],
+      assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length ? parsed.assumptions : [],
     };
   } catch (error) {
     console.error("[planner] Gemini enhancement failed", error);
-    return fallback;
+    throw new Error("Planner analysis unavailable");
   }
 }
-

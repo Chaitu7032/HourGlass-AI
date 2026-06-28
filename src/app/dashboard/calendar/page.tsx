@@ -4,24 +4,13 @@ import { DashboardShell } from "@/components/layout/sidebar";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { useIntelligence } from "@/lib/execution/use-intelligence";
 import { motion } from "framer-motion";
-import { Calendar, ArrowLeft, Clock, Zap, Sun, Moon } from "lucide-react";
+import { Calendar, ArrowLeft, Clock, Zap } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useMemo } from "react";
 
 function formatHours(value: number) {
   return Number.isInteger(value) ? `${value}h` : `${value.toFixed(1)}h`;
-}
-
-function getDeepWorkIcon(window: string) {
-  switch (window) {
-    case "morning": return Sun;
-    case "afternoon": return Sun;
-    case "evening": return Moon;
-    case "night": return Moon;
-    default: return Zap;
-  }
 }
 
 export default function TimelinePage() {

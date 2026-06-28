@@ -178,7 +178,7 @@ function buildSubtasks(category: TaskCategory, title: string): string[] {
     other: ["Clarify the outcome", "Take the first concrete step", "Check what remains"],
   };
 
-  const smartPrefix = title.trim() ? title.trim() : "This commitment";
+  const smartPrefix = title.trim() ? title.trim() : "Enter a task title";
   return defaults[category].map((item) => `${smartPrefix}: ${item}`);
 }
 
@@ -197,7 +197,7 @@ function buildExecutionStrategy(category: TaskCategory, riskScore: number, hours
 }
 
 export function buildPlannerSuggestion(draft: CommitmentDraft): PlannerSuggestion {
-  const normalizedTitle = draft.title.trim() || "Untitled commitment";
+  const normalizedTitle = draft.title.trim() || "Enter a task title";
   const category = draft.category ?? inferCategoryFromText(`${normalizedTitle} ${draft.description ?? ""}`);
   const rawComplexity = draft.complexity ?? Math.min(10, Math.max(2, Math.round(getBaseHours(category, normalizedTitle) / 2)));
   const complexity = Math.min(10, Math.max(1, Math.round(rawComplexity)));

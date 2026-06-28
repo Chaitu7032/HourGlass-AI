@@ -6,6 +6,8 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/components/auth/auth-provider";
+import { useExecutionProfile } from "@/lib/execution/use-intelligence";
 
 const SUGGESTIONS = [
   "What's my highest risk task?",
@@ -29,6 +31,9 @@ export function ChatStream() {
   const { chatMessages, addChatMessage, isChatLoading, setIsChatLoading, orchestration } =
     useHourglassStore();
   const [streamingText, setStreamingText] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const { profile } = useAuth();
+  const { getLocalProfile } = useExecutionProfile();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -41,33 +46,55 @@ export function ChatStream() {
     setInput("");
     setIsChatLoading(true);
     setStreamingText("");
+    setError(null);
 
     try {
+      const executionProfile = getLocalProfile();
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, context: orchestration }),
+        body: JSON.stringify({
+          message: text,
+          context: {
+            orchestration,
+            tasks: useHourglassStore.getState().tasks,
+            userProfile: profile,
+            executionProfile,
+            conversationHistory: chatMessages.slice(-8),
+            currentScreen: "dashboard_chat",
+          },
+        }),
       });
-      const { reply } = await res.json();
+      const payload = (await res.json()) as { reply?: string; error?: string };
+
+      if (!res.ok) {
+        throw new Error(payload.error ?? "Chat failed");
+      }
+
+      if (!payload.reply) {
+        throw new Error("Chat response was empty.");
+      }
 
       // Simulate streaming for UX
-      const words = reply.split(" ");
+      const words = payload.reply.split(" ");
       for (let i = 0; i < words.length; i++) {
         setStreamingText((prev) => prev + (i > 0 ? " " : "") + words[i]);
         await new Promise((r) => setTimeout(r, 15 + Math.random() * 20));
       }
 
-      addChatMessage({ role: "assistant", content: reply, agentContext: "orchestrator" });
+      addChatMessage({ role: "assistant", content: payload.reply, agentContext: "orchestrator" });
       setStreamingText("");
-    } catch {
+    } catch (chatError) {
+      const message = chatError instanceof Error ? chatError.message : "Unable to reach the AI Chief of Staff.";
+      setError(message);
       addChatMessage({
         role: "assistant",
-        content: "I encountered an issue connecting to the intelligence layer. Please try again.",
+        content: `I couldn't complete that request: ${message}`,
       });
     } finally {
       setIsChatLoading(false);
     }
-  }, [addChatMessage, isChatLoading, setIsChatLoading, orchestration]);
+  }, [addChatMessage, chatMessages, getLocalProfile, isChatLoading, orchestration, profile, setIsChatLoading]);
 
   return (
     <div className="flex h-[calc(100vh-7rem)] flex-col">
@@ -185,6 +212,11 @@ export function ChatStream() {
       </div>
 
       {/* Input bar */}
+      {error && (
+        <div className="mb-3 rounded-xl border border-red-400/20 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+          {error}
+        </div>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();

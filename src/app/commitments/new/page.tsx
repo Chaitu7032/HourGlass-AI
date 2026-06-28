@@ -47,10 +47,10 @@ const PLANNING_TIMEOUT_MS = 12_000;
 const PREFETCH_TIMEOUT_MS = 4_000;
 
 const motivations: Motivation[] = [
-  { value: "ðŸ˜´", label: "Need a nudge", icon: Smile },
-  { value: "ðŸ™‚", label: "Steady momentum", icon: Sparkles },
-  { value: "ðŸ”¥", label: "Highly motivated", icon: Flame },
-  { value: "ðŸš€", label: "All-in energy", icon: Zap },
+  { value: "need_a_nudge", label: "Need a nudge", icon: Smile },
+  { value: "steady_momentum", label: "Steady momentum", icon: Sparkles },
+  { value: "highly_motivated", label: "Highly motivated", icon: Flame },
+  { value: "all_in_energy", label: "All-in energy", icon: Zap },
 ];
 
 const commitTypes: Array<{
@@ -103,6 +103,23 @@ function createPipelineLogger(runId: string) {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableFirestoreError(error: unknown) {
+  if (!(error instanceof Error)) return false;
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("timed out") ||
+    message.includes("unavailable") ||
+    message.includes("network") ||
+    message.includes("deadline exceeded") ||
+    message.includes("failed to get document")
+  );
+}
+
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
@@ -117,6 +134,37 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: str
       clearTimeout(timeoutHandle);
     }
   }
+}
+
+async function persistTaskWithRetry(
+  userId: string,
+  taskDraft: Omit<Task, "createdAt" | "updatedAt">,
+  logger: PipelineLogger
+) {
+  const attempts = 3;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      logger("firestore_write", "attempt_started", { attempt, taskId: taskDraft.id });
+      const persistedTask = await withTimeout(createUserTask(userId, taskDraft), SAVE_TIMEOUT_MS, "Firestore write");
+      logger("firestore_write", "succeeded", { attempt, taskId: persistedTask.id });
+      return persistedTask;
+    } catch (error) {
+      logger("firestore_write", "attempt_failed", {
+        attempt,
+        taskId: taskDraft.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      if (attempt === attempts || !isRetryableFirestoreError(error)) {
+        throw error;
+      }
+
+      await sleep(800 * attempt);
+    }
+  }
+
+  throw new Error("Unable to save commitment.");
 }
 
 async function preloadWorkspace(userId: string, logger: PipelineLogger) {
@@ -220,7 +268,7 @@ export default function NewCommitmentPage() {
   });
   const [priority, setPriority] = useState<TaskPriority>("high");
   const [effort, setEffort] = useState(8);
-  const [motivation, setMotivation] = useState("ðŸ”¥");
+  const [motivation, setMotivation] = useState("highly_motivated");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [planning, setPlanning] = useState(false);
@@ -370,21 +418,19 @@ export default function NewCommitmentPage() {
       setTasks(nextTasks);
       logger("optimistic_update", "succeeded", { nextTaskCount: nextTasks.length });
 
-      logger("firestore_write", "started", { taskId });
-      const persistedTask = await withTimeout(createUserTask(user.uid, taskDraft), SAVE_TIMEOUT_MS, "Firestore write");
-      logger("firestore_write", "succeeded", { taskId: persistedTask.id });
+      if (!optimisticTask) {
+        throw new Error("Unable to construct the commitment draft.");
+      }
 
-      const committedTasks = [persistedTask, ...previousTasks.filter((task) => task.id !== persistedTask.id)];
-      setSavedTask(persistedTask);
+      const confirmedTask = await persistTaskWithRetry(user.uid, taskDraft, logger);
+      const committedTasks = [confirmedTask, ...previousTasks.filter((task) => task.id !== confirmedTask.id)];
+      setSavedTask(confirmedTask);
       setSavedTaskSet(committedTasks);
       setTasks(committedTasks);
 
       logger("router_navigation", "started", { destination: "/dashboard" });
       navigationStartedRef.current = true;
-
-      if (isMountedRef.current) {
-        setPlanning(true);
-      }
+      logger("background_tasks", "queued", { taskCount: committedTasks.length });
 
       void (async () => {
         try {
@@ -412,6 +458,10 @@ export default function NewCommitmentPage() {
 
       router.replace("/dashboard");
       logger("router_navigation", "dispatched", { destination: "/dashboard" });
+
+      if (isMountedRef.current) {
+        setPlanning(false);
+      }
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : "Unable to create commitment.";
       logger("pipeline", "failed", { error: message, navigated: navigationStartedRef.current });
@@ -426,8 +476,9 @@ export default function NewCommitmentPage() {
       }
     } finally {
       logger("pipeline", "finished", { navigated: navigationStartedRef.current });
-      if (isMountedRef.current && !navigationStartedRef.current) {
+      if (isMountedRef.current) {
         setIsSaving(false);
+        setPlanning(false);
       }
     }
   };

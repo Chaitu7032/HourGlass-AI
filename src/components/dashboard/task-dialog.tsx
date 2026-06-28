@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   Brain,
@@ -75,7 +75,11 @@ interface TaskDialogProps {
   error: string | null;
 }
 
-function formatHours(value: number) {
+function formatHours(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "N/A";
+  }
+
   return Number.isInteger(value) ? `${value}h` : `${value.toFixed(1)}h`;
 }
 
@@ -113,6 +117,41 @@ function getExecutionHealthTone(value: string) {
   return "text-emerald-300";
 }
 
+function isMeaningfulDescription(description: string) {
+  return description.trim().length >= 12;
+}
+
+function getAnalysisConfidence(values: TaskFormValues) {
+  const title = values.title.trim();
+  const description = values.description.trim();
+  const hasTitle = Boolean(title);
+  const hasMeaningfulDescription = isMeaningfulDescription(description);
+  const hasDeadlineContext = Boolean(values.deadlineDate);
+  const hasCategoryContext = values.category !== "other";
+  const hasPriorityContext = values.priority !== "medium";
+  const hasComplexityContext = Boolean(values.complexity.trim());
+
+  if (!hasTitle && !hasMeaningfulDescription) {
+    return null;
+  }
+
+  let value = 0;
+
+  if (hasTitle) value += 35;
+  if (hasMeaningfulDescription) value += hasTitle ? 25 : 45;
+  if (hasDeadlineContext) value += 10;
+  if (hasCategoryContext) value += 10;
+  if (hasPriorityContext) value += 5;
+  if (hasComplexityContext) value += 5;
+
+  value = Math.min(92, value);
+
+  return {
+    value,
+    label: value >= 80 ? "high" : value >= 50 ? "medium" : "low",
+  } as const;
+}
+
 export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: TaskDialogProps) {
   const [values, setValues] = useState<TaskFormValues>(createDefaultValues);
   const [plannerSuggestion, setPlannerSuggestion] = useState<PlannerSuggestion | null>(null);
@@ -142,29 +181,15 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
 
   const parsedHours = values.estimatedHours ? Number(values.estimatedHours) : Number.NaN;
   const parsedComplexity = values.complexity ? Number(values.complexity) : Number.NaN;
-  const currentDraft = useMemo(
-    () => ({
-      title: values.title,
-      description: values.description,
-      deadline: getDeadlineDate(values.deadlineDate)?.toISOString(),
-      estimatedHours: Number.isFinite(parsedHours) ? parsedHours : null,
-      priority: touched.priority ? values.priority : null,
-      category: touched.category ? values.category : null,
-      complexity: Number.isFinite(parsedComplexity) ? parsedComplexity : null,
-    }),
-    [values, parsedComplexity, parsedHours, touched.category, touched.priority]
-  );
-
-  const fallbackSuggestion = useMemo(
-    () => buildPlannerSuggestion(currentDraft),
-    [currentDraft]
-  );
-
-  const activeSuggestion = plannerSuggestion ?? fallbackSuggestion;
+  const titleText = values.title.trim();
+  const descriptionText = values.description.trim();
+  const hasMeaningfulInput = Boolean(titleText) || isMeaningfulDescription(descriptionText);
+  const analysisSeedTitle = titleText || (isMeaningfulDescription(descriptionText) ? descriptionText.slice(0, 120) : "");
+  const inputConfidence = getAnalysisConfidence(values);
   const daysRemaining = getDaysRemaining(values.deadlineDate);
 
   useEffect(() => {
-    if (!values.title.trim()) {
+    if (!hasMeaningfulInput) {
       const reset = window.setTimeout(() => {
         setPlannerSuggestion(null);
         setPlannerStatus("idle");
@@ -176,6 +201,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
 
     const controller = new AbortController();
     const timeout = window.setTimeout(async () => {
+      setPlannerSuggestion(null);
       setPlannerStatus("loading");
       setSuggestionError(null);
 
@@ -184,12 +210,12 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: values.title,
-            description: values.description,
+            title: analysisSeedTitle,
+            description: descriptionText,
             deadline: getDeadlineDate(values.deadlineDate)?.toISOString(),
             estimatedHours: Number.isFinite(parsedHours) ? parsedHours : null,
-            priority: values.priority,
-            category: values.category,
+            priority: touched.priority ? values.priority : null,
+            category: touched.category ? values.category : null,
             complexity: Number.isFinite(parsedComplexity) ? parsedComplexity : null,
           }),
           signal: controller.signal,
@@ -232,13 +258,23 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
       controller.abort();
       window.clearTimeout(timeout);
     };
-  }, [parsedComplexity, parsedHours, touched.category, touched.complexity, touched.estimatedHours, touched.priority, values.category, values.deadlineDate, values.description, values.priority, values.title]);
+  }, [analysisSeedTitle, descriptionText, hasMeaningfulInput, parsedComplexity, parsedHours, touched.category, touched.complexity, touched.estimatedHours, touched.priority, values.category, values.deadlineDate, values.priority]);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     const deadline = getDeadlineDate(values.deadlineDate);
-    const finalSuggestion = activeSuggestion;
+    const finalSuggestion =
+      plannerSuggestion ??
+      buildPlannerSuggestion({
+        title: analysisSeedTitle || "Enter a task title",
+        description: descriptionText,
+        deadline: deadline?.toISOString(),
+        estimatedHours: Number.isFinite(parsedHours) ? parsedHours : null,
+        priority: values.priority,
+        category: values.category,
+        complexity: Number.isFinite(parsedComplexity) ? parsedComplexity : null,
+      });
     await onSubmit({
       title: values.title.trim(),
       description: values.description.trim(),
@@ -250,12 +286,36 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
     });
   };
 
-  const complexityNumber = Number.isFinite(parsedComplexity) ? parsedComplexity : activeSuggestion.complexity;
-  const complexityCopy = COMPLEXITY_SCALE[Math.min(10, Math.max(1, Math.round(complexityNumber)))] ?? COMPLEXITY_SCALE[5];
+  const complexityNumber = plannerSuggestion
+    ? plannerSuggestion.complexity
+    : Number.isFinite(parsedComplexity)
+      ? parsedComplexity
+      : null;
+  const complexityCopy = complexityNumber
+    ? COMPLEXITY_SCALE[Math.min(10, Math.max(1, Math.round(complexityNumber)))] ?? COMPLEXITY_SCALE[5]
+    : null;
   const priorityCopy = PRIORITY_OPTIONS.find((option) => option.value === values.priority) ?? PRIORITY_OPTIONS[2];
   const categoryCopy = CATEGORY_OPTIONS.find((option) => option.value === values.category) ?? CATEGORY_OPTIONS[CATEGORY_OPTIONS.length - 1];
-  const deadlineRiskTone = getRiskTone(activeSuggestion.deadlineRisk);
-  const executionHealthTone = getExecutionHealthTone(activeSuggestion.executionHealth);
+  const deadlineRiskTone = plannerSuggestion ? getRiskTone(plannerSuggestion.deadlineRisk) : "text-white/45 border-white/10 bg-white/5";
+  const executionHealthTone = plannerSuggestion ? getExecutionHealthTone(plannerSuggestion.executionHealth) : "text-white/45";
+  const analysisConfidenceText = inputConfidence ? `${inputConfidence.label} confidence (${inputConfidence.value}%)` : "â€”";
+  const executionHealthText = plannerSuggestion ? plannerSuggestion.executionHealth : hasMeaningfulInput ? "Awaiting analysis" : "Insufficient information";
+  const riskText = plannerSuggestion ? plannerSuggestion.deadlineRisk : hasMeaningfulInput ? "Awaiting analysis" : "Insufficient information";
+  const effortText = plannerSuggestion ? formatHours(plannerSuggestion.estimatedHours) : hasMeaningfulInput ? "Analyzing..." : "Waiting for analysis";
+  const complexityText = plannerSuggestion ? `${plannerSuggestion.complexity}/10` : hasMeaningfulInput ? "Analyzing..." : "Waiting for analysis";
+  const sessionsText = plannerSuggestion ? `${plannerSuggestion.suggestedWorkSessions}` : hasMeaningfulInput ? "Pending estimation" : "Waiting for analysis";
+  const capacityText = plannerSuggestion ? formatHours(plannerSuggestion.availableCapacityHours) : hasMeaningfulInput ? "Pending estimation" : "Waiting for analysis";
+  const confidenceText = plannerSuggestion ? `${Math.round(plannerSuggestion.confidence * 100)}%` : analysisConfidenceText;
+  const firstStepText = plannerSuggestion
+    ? plannerSuggestion.firstStep
+    : hasMeaningfulInput
+      ? "Awaiting analysis"
+      : "Enter a task title to generate recommendations.";
+  const subtasksText = plannerSuggestion
+    ? plannerSuggestion.subtasks.slice(0, 3)
+    : hasMeaningfulInput
+      ? ["Recommendations will appear after analysis."]
+      : ["Enter a task title to generate recommendations."];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -316,7 +376,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-sm font-medium text-white/70">Estimated hours</span>
                       <span className="text-[11px] text-sky-300">
-                        AI suggests {formatHours(activeSuggestion.estimatedHours)} · {Math.round(activeSuggestion.estimatedHoursConfidence * 100)}% confidence
+                        {confidenceText}
                       </span>
                     </div>
                     <Input
@@ -328,7 +388,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                         setTouched((current) => ({ ...current, estimatedHours: true }));
                         setValues((current) => ({ ...current, estimatedHours: event.target.value }));
                       }}
-                      placeholder={String(activeSuggestion.estimatedHours)}
+                      placeholder={plannerSuggestion ? String(plannerSuggestion.estimatedHours) : hasMeaningfulInput ? "Waiting for analysis" : "Enter a task title"}
                     />
                     <p className="text-[11px] text-white/35">You can override the recommendation at any time.</p>
                   </label>
@@ -375,7 +435,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium text-white/70">Complexity</span>
                       <span className="text-sm text-white/40">
-                        {complexityNumber}/10 · {complexityCopy.label}
+                        {complexityText} Â· {complexityCopy?.label ?? "Waiting"}
                       </span>
                     </div>
                     <Input
@@ -390,7 +450,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                       }}
                       placeholder="5"
                     />
-                    <p className="text-[11px] leading-5 text-white/35">{complexityCopy.hint}</p>
+                    <p className="text-[11px] leading-5 text-white/35">{complexityCopy?.hint ?? "Waiting for analysis"}</p>
                   </label>
                 </div>
 
@@ -400,21 +460,39 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                       <Brain className="h-4 w-4 text-sky-300" />
                       Planner analysis
                     </div>
-                    <span className={cn("text-[11px] uppercase tracking-[0.18em]", activeSuggestion.source === "Gemini" ? "text-emerald-300" : "text-white/40")}>
-                      {plannerStatus === "loading" ? "Analyzing..." : `${activeSuggestion.source} assisted`}
+                    <span className={cn("text-[11px] uppercase tracking-[0.18em]", plannerSuggestion?.source === "Gemini" ? "text-emerald-300" : "text-white/40")}>
+                      {plannerStatus === "loading"
+                        ? "Analyzing..."
+                        : plannerSuggestion
+                          ? `${plannerSuggestion.source} assisted`
+                          : hasMeaningfulInput
+                            ? "Awaiting analysis"
+                            : "Waiting for input"}
                     </span>
                   </div>
-                  <p className="mt-2 text-sm text-white/70">{activeSuggestion.reasoning}</p>
+                  <p className="mt-2 text-sm text-white/70">
+                    {plannerSuggestion
+                      ? plannerSuggestion.reasoning
+                      : hasMeaningfulInput
+                        ? "Hourglass is preparing a recommendation from your profile and commitment context."
+                        : "Enter a task title to generate recommendations."}
+                  </p>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/45">
-                    {activeSuggestion.assumptions.map((item) => (
-                      <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
-                        {item}
-                      </span>
-                    ))}
+                    {plannerSuggestion
+                      ? plannerSuggestion.assumptions.map((item) => (
+                          <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
+                            {item}
+                          </span>
+                        ))
+                      : [hasMeaningfulInput ? "Waiting for analysis" : "Enter a task title to generate recommendations."].map((item) => (
+                          <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
+                            {item}
+                          </span>
+                        ))}
                   </div>
                   {suggestionError && (
                     <p className="mt-3 text-xs text-white/35">
-                      {suggestionError}. Showing the offline heuristic model instead.
+                      {suggestionError}. The preview is waiting for a valid analysis response.
                     </p>
                   )}
                 </div>
@@ -427,7 +505,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
               </form>
             </div>
 
-            {/* ── Sticky submit bar ── */}
+            {/* â”€â”€ Sticky submit bar â”€â”€ */}
             <div className="shrink-0 border-t border-white/10 bg-zinc-950/95 p-4 backdrop-blur-md sm:p-6">
               <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
@@ -451,27 +529,35 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                 </div>
                 <span className={cn(
                   "text-[10px] px-2 py-0.5 rounded-full border",
-                  plannerStatus === "loading" 
+                  plannerStatus === "loading"
                     ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
-                    : activeSuggestion.source === "Gemini"
+                    : plannerSuggestion?.source === "Gemini"
                       ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
                       : "border-white/10 bg-white/5 text-white/40"
                 )}>
-                  {plannerStatus === "loading" ? "Analyzing..." : activeSuggestion.source === "Gemini" ? "AI powered" : "Heuristic"}
+                  {plannerStatus === "loading"
+                    ? "Analyzing..."
+                    : plannerSuggestion
+                      ? plannerSuggestion.source === "Gemini"
+                        ? "AI powered"
+                        : "AI ready"
+                      : hasMeaningfulInput
+                        ? "Awaiting analysis"
+                        : "Waiting"}
                 </span>
               </div>
 
-              {/* ── Commitment Card ── */}
+              {/* â”€â”€ Commitment Card â”€â”€ */}
               <div className="mt-4 rounded-2xl border border-white/10 bg-gradient-to-br from-blue-500/5 to-violet-500/5 p-4">
                 <h3 className="text-xl font-semibold text-white leading-tight">
-                  {values.title.trim() || "Start with a title"}
+                  {titleText || "Enter a task title"}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-white/55">
-                  {values.description.trim() || "The planner will infer effort, subtasks, and the best first move."}
+                  {descriptionText || "Add a description so the planner can generate more credible recommendations."}
                 </p>
               </div>
 
-              {/* ── Quick Stats Grid ── */}
+              {/* â”€â”€ Quick Stats Grid â”€â”€ */}
               <div className="mt-4 grid grid-cols-2 gap-2">
                 <motion.div layout className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-white/35">
@@ -479,8 +565,8 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     Effort
                   </div>
                   <div className="mt-1 flex items-baseline gap-1">
-                    <span className="text-lg font-semibold text-white">{formatHours(activeSuggestion.estimatedHours)}</span>
-                    <span className="text-[10px] text-white/40">{Math.round(activeSuggestion.estimatedHoursConfidence * 100)}%</span>
+                    <span className="text-lg font-semibold text-white">{effortText}</span>
+                    <span className="text-[10px] text-white/40">{plannerSuggestion ? `${Math.round(plannerSuggestion.estimatedHoursConfidence * 100)}%` : "—"}</span>
                   </div>
                 </motion.div>
 
@@ -490,8 +576,8 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     Complexity
                   </div>
                   <div className="mt-1">
-                    <span className="text-lg font-semibold text-white">{complexityNumber}/10</span>
-                    <span className="ml-1.5 text-xs text-white/50">{complexityCopy.label}</span>
+                    <span className="text-lg font-semibold text-white">{complexityText}</span>
+                    <span className="ml-1.5 text-xs text-white/50">{complexityCopy?.label ?? "Waiting"}</span>
                   </div>
                 </motion.div>
 
@@ -501,7 +587,7 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     Deadline risk
                   </div>
                   <span className={cn("mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-medium", deadlineRiskTone)}>
-                    {activeSuggestion.deadlineRisk}
+                    {riskText}
                   </span>
                 </motion.div>
 
@@ -511,78 +597,80 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                     Sessions
                   </div>
                   <div className="mt-1">
-                    <span className="text-lg font-semibold text-white">{activeSuggestion.suggestedWorkSessions}</span>
+                    <span className="text-lg font-semibold text-white">{sessionsText}</span>
                     <span className="ml-1.5 text-xs text-white/50">blocks</span>
                   </div>
                 </motion.div>
               </div>
 
-              {/* ── Capacity & Health Row ── */}
+              {/* â”€â”€ Capacity & Health Row â”€â”€ */}
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <motion.div layout className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-white/35">Available capacity</div>
-                  <div className="mt-1 text-lg font-semibold text-white">{formatHours(activeSuggestion.availableCapacityHours)}</div>
+                  <div className="mt-1 text-lg font-semibold text-white">{capacityText}</div>
                   <div className="text-[10px] text-white/45">Conservative window</div>
                 </motion.div>
 
                 <motion.div layout className="rounded-xl border border-white/10 bg-white/[0.04] p-3">
                   <div className="text-[10px] uppercase tracking-[0.12em] text-white/35">Execution health</div>
                   <div className={cn("mt-1 text-lg font-semibold", executionHealthTone)}>
-                    {activeSuggestion.executionHealth}
+                    {executionHealthText}
                   </div>
-                  <div className="text-[10px] text-white/45">{Math.round(activeSuggestion.confidence * 100)}% confidence</div>
+                  <div className="text-[10px] text-white/45">{confidenceText}</div>
                 </motion.div>
               </div>
 
-              {/* ── Suggested Subtasks ── */}
+              {/* â”€â”€ Suggested Subtasks â”€â”€ */}
               <motion.div layout className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-3">
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-white/35">
                   <Lightbulb className="h-3 w-3" />
-                  Suggested subtasks ({activeSuggestion.subtaskCount})
+                  Suggested subtasks {plannerSuggestion ? `(${plannerSuggestion.subtaskCount})` : ""}
                 </div>
                 <div className="mt-2 space-y-1.5">
-                  {activeSuggestion.subtasks.slice(0, 3).map((item) => (
+                  {subtasksText.map((item) => (
                     <div key={item} className="flex items-start gap-1.5">
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400/70" />
                       <span className="text-xs text-white/65">{item}</span>
                     </div>
                   ))}
-                  {activeSuggestion.subtaskCount > 3 && (
-                    <p className="text-[10px] text-white/35 pl-5">+{activeSuggestion.subtaskCount - 3} more</p>
+                  {plannerSuggestion && plannerSuggestion.subtaskCount > 3 && (
+                    <p className="text-[10px] text-white/35 pl-5">+{plannerSuggestion.subtaskCount - 3} more</p>
                   )}
                 </div>
               </motion.div>
 
-              {/* ── First Step ── */}
+              {/* â”€â”€ First Step â”€â”€ */}
               <motion.div layout className="mt-3 rounded-xl border border-sky-400/20 bg-sky-400/5 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-sky-300">
                     <ArrowRight className="h-3 w-3" />
                     Recommended first step
                   </div>
-                  <span className="text-[10px] text-white/40">confidence {Math.round(activeSuggestion.confidence * 100)}%</span>
+                  <span className="text-[10px] text-white/40">confidence {confidenceText}</span>
                 </div>
-                <p className="mt-1 text-sm leading-5 text-white/80">{activeSuggestion.firstStep}</p>
+                <p className="mt-1 text-sm leading-5 text-white/80">{firstStepText}</p>
               </motion.div>
 
-              {/* ── Plan Summary ── */}
+              {/* â”€â”€ Plan Summary â”€â”€ */}
               <motion.div layout className="mt-3 rounded-xl border border-white/10 bg-white/[0.04] p-3">
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-[0.12em] text-white/35">
                   <Target className="h-3 w-3" />
                   Plan summary
                 </div>
                 <div className="mt-1.5 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{formatHours(activeSuggestion.estimatedHours)}</span>
-                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{complexityCopy.label}</span>
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{effortText}</span>
+                  <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{complexityCopy?.label ?? "Waiting"}</span>
                   <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{getCategoryLabel(values.category)}</span>
                   <span className="rounded-full border border-white/10 bg-black/30 px-2 py-0.5 text-[10px] text-white/60">{priorityCopy.label}</span>
                 </div>
                 <p className="mt-2 text-[10px] text-white/40 leading-4">
                   {plannerStatus === "loading"
                     ? "Planner is refining the estimate..."
-                    : activeSuggestion.source === "Gemini"
+                    : plannerSuggestion?.source === "Gemini"
                       ? "Live planner recommendations powered by Gemini."
-                      : "Offline heuristic model filling in the plan."}
+                      : hasMeaningfulInput
+                        ? "Awaiting analysis."
+                        : "Enter a task title to start analysis."}
                 </p>
               </motion.div>
               </div>
@@ -593,3 +681,4 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
     </Dialog>
   );
 }
+

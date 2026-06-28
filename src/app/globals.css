@@ -3,7 +3,7 @@
 :root {
   --background: #09090b;
   --foreground: #fafafa;
-  --font-geist-sans: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-geist-sans: "Segoe UI", "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-geist-mono: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
 }
 
@@ -14,10 +14,28 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  scroll-behavior: smooth;
+  color-scheme: dark;
+}
+
 body {
-  background: var(--background);
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(56, 189, 248, 0.12), transparent 28%),
+    radial-gradient(circle at 80% 12%, rgba(59, 130, 246, 0.08), transparent 24%),
+    radial-gradient(circle at 50% 100%, rgba(15, 118, 110, 0.08), transparent 30%),
+    linear-gradient(180deg, #07070a 0%, #090d16 54%, #07070a 100%);
+  background-attachment: fixed;
   color: var(--foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(56, 189, 248, 0.35);
+  color: #fff;
 }
 
 /* Custom scrollbar */
@@ -25,27 +43,31 @@ body {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
 
 /* Glass effect utility */
 .glass {
-  background: rgba(255, 255, 255, 0.06);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.18);
 }
 
 /* Gradient text */
 .gradient-text {
-  background: linear-gradient(135deg, #60a5fa, #a78bfa, #22d3ee);
+  background: linear-gradient(135deg, #67e8f9, #38bdf8, #60a5fa);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;

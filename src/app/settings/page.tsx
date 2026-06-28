@@ -1,30 +1,26 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowLeft, Hourglass, Sparkles } from "lucide-react";
 import { DashboardShell } from "@/components/layout/sidebar";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useExecutionProfile } from "@/lib/execution/use-intelligence";
 import { ExecutionProfileForm } from "@/components/onboarding/execution-profile-form";
-import { Button } from "@/components/ui/button";
 import type { ExecutionProfile } from "@/types/execution-profile";
 import Link from "next/link";
 
 export default function SettingsPage() {
-  const router = useRouter();
   const { user, profile } = useAuth();
   const { loadProfile, updateProfile } = useExecutionProfile();
   const [existingProfile, setExistingProfile] = useState<Partial<ExecutionProfile> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.uid) {
-      loadProfile().then((p) => {
+      loadProfile().then((p: ExecutionProfile | null) => {
         if (p) {
           setExistingProfile(p);
         }
@@ -36,7 +32,6 @@ export default function SettingsPage() {
   }, [user?.uid, loadProfile]);
 
   const handleSave = async (execProfile: ExecutionProfile) => {
-    setSaving(true);
     setError(null);
     setSaved(false);
     try {
@@ -45,8 +40,6 @@ export default function SettingsPage() {
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save profile");
-    } finally {
-      setSaving(false);
     }
   };
 
