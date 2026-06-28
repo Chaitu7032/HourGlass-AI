@@ -51,15 +51,24 @@ Return strictly valid JSON.`;
     }
 
     return {
-      ...parsed,
       source: "Gemini",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0.5,
       estimatedHours: typeof parsed.estimatedHours === "number" ? parsed.estimatedHours : 1,
       estimatedHoursConfidence: typeof parsed.estimatedHoursConfidence === "number" ? parsed.estimatedHoursConfidence : 0.5,
       complexity: typeof parsed.complexity === "number" ? parsed.complexity : 1,
+      complexityLabel: typeof parsed.complexityLabel === "string" ? parsed.complexityLabel : "Medium",
+      priority: typeof parsed.priority === "string" ? (parsed.priority as PlannerSuggestion["priority"]) : "medium",
+      category: typeof parsed.category === "string" ? (parsed.category as PlannerSuggestion["category"]) : "other",
+      deadlineRisk: typeof parsed.deadlineRisk === "string" ? (parsed.deadlineRisk as PlannerSuggestion["deadlineRisk"]) : "moderate",
       subtaskCount:
         typeof parsed.subtaskCount === "number" ? parsed.subtaskCount : Array.isArray(parsed.subtasks) ? parsed.subtasks.length : 0,
       subtasks: Array.isArray(parsed.subtasks) && parsed.subtasks.length ? parsed.subtasks : [],
+      executionStrategy: typeof parsed.executionStrategy === "string" ? parsed.executionStrategy : "Plan your approach based on the available time.",
+      suggestedWorkSessions: typeof parsed.suggestedWorkSessions === "number" ? parsed.suggestedWorkSessions : 2,
+      availableCapacityHours: typeof parsed.availableCapacityHours === "number" ? parsed.availableCapacityHours : 2,
+      firstStep: typeof parsed.firstStep === "string" ? parsed.firstStep : "Clarify the first step for this commitment",
+      executionHealth: typeof parsed.executionHealth === "string" ? parsed.executionHealth : "Healthy",
+      reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "Draft analyzed with available context.",
       assumptions: Array.isArray(parsed.assumptions) && parsed.assumptions.length ? parsed.assumptions : [],
     };
   } catch (error) {

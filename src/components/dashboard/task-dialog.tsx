@@ -306,13 +306,13 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
   const sessionsText = plannerSuggestion ? `${plannerSuggestion.suggestedWorkSessions}` : hasMeaningfulInput ? "Pending estimation" : "Waiting for analysis";
   const capacityText = plannerSuggestion ? formatHours(plannerSuggestion.availableCapacityHours) : hasMeaningfulInput ? "Pending estimation" : "Waiting for analysis";
   const confidenceText = plannerSuggestion ? `${Math.round(plannerSuggestion.confidence * 100)}%` : analysisConfidenceText;
-  const firstStepText = plannerSuggestion
-    ? plannerSuggestion.firstStep
+  const firstStepText: string = plannerSuggestion
+    ? String(typeof plannerSuggestion.firstStep === "string" ? plannerSuggestion.firstStep : ((plannerSuggestion.firstStep as Record<string, unknown>)?.title ?? JSON.stringify(plannerSuggestion.firstStep)))
     : hasMeaningfulInput
       ? "Awaiting analysis"
       : "Enter a task title to generate recommendations.";
-  const subtasksText = plannerSuggestion
-    ? plannerSuggestion.subtasks.slice(0, 3)
+  const subtasksText: string[] = plannerSuggestion
+    ? plannerSuggestion.subtasks.slice(0, 3).map((item): string => typeof item === "string" ? item : String((item as Record<string, unknown>)?.title ?? (item as Record<string, unknown>)?.description ?? JSON.stringify(item)))
     : hasMeaningfulInput
       ? ["Recommendations will appear after analysis."]
       : ["Enter a task title to generate recommendations."];
@@ -479,11 +479,14 @@ export function TaskDialog({ open, onOpenChange, onSubmit, isSaving, error }: Ta
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-white/45">
                     {plannerSuggestion
-                      ? plannerSuggestion.assumptions.map((item) => (
-                          <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
-                            {item}
-                          </span>
-                        ))
+                      ? plannerSuggestion.assumptions.map((item, idx) => {
+                          const text = String(typeof item === "string" ? item : (item as Record<string, unknown>)?.title ?? (item as Record<string, unknown>)?.description ?? JSON.stringify(item));
+                          return (
+                            <span key={idx} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
+                              {text}
+                            </span>
+                          );
+                        })
                       : [hasMeaningfulInput ? "Waiting for analysis" : "Enter a task title to generate recommendations."].map((item) => (
                           <span key={item} className="rounded-full border border-white/10 bg-black/20 px-3 py-1">
                             {item}

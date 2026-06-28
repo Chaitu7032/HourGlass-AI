@@ -64,7 +64,7 @@ function MissionMetricCard({
       </div>
       <p className="mt-2 text-xs leading-5 text-white/55">{helper}</p>
       <details className="mt-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-white/55">
-        <summary className="cursor-pointer list-none text-white/70">Why?</summary>
+        <summary className="cursor-pointer list-none text-white/70">Reasoning</summary>
         <p className="mt-2 leading-5">{why}</p>
       </details>
     </motion.article>
@@ -365,7 +365,7 @@ export default function MissionControlPage() {
               helper={confidence ? `${confidence.value}% · ${confidence.reasoning[0] ?? ""}` : "Complete profile for confidence"}
               why={
                 confidence
-                  ? confidence.reasoning.map((r) => `• ${r}`).join("\n")
+                  ? confidence.reasoning.map((r) => `- ${r}`).join("\n")
                   : "Confidence is based on data completeness across profile, tasks, and integrations."
               }
               tone={

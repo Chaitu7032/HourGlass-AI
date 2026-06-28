@@ -127,6 +127,10 @@ function formatMinutesToHour(minutes: number): number {
   return Math.round((minutes / 60) * 10) / 10;
 }
 
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 function getNextDateForDay(dayName: string): string {
   const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
   const targetIndex = days.indexOf(dayName);
@@ -188,7 +192,7 @@ export function computeWorkload(
   const remainingHours = Math.max(0, totalRequiredHours);
   const availableCapacity = weeklyCapacity.productiveHours;
   const utilization = availableCapacity > 0
-    ? Math.min(100, Math.round((remainingHours / availableCapacity) * 100))
+    ? Math.round((remainingHours / availableCapacity) * 100)
     : 0;
 
   return {
@@ -196,9 +200,9 @@ export function computeWorkload(
     totalCompletedHours,
     remainingHours,
     availableCapacity,
-    utilization,
-    overallocated: utilization > 100,
-    overallocationAmount: utilization > 100 ? remainingHours - availableCapacity : 0,
+    utilization: clamp(utilization, 0, 999),
+    overallocated: remainingHours > availableCapacity,
+    overallocationAmount: remainingHours > availableCapacity ? Math.round((remainingHours - availableCapacity) * 10) / 10 : 0,
   };
 }
 
@@ -258,53 +262,71 @@ export function computeConfidence(
   const reasons: string[] = [];
   let score = 0;
 
-  // Execution Profile completeness (up to 40 points)
-  if (profile.profileComplete) {
-    score += 40;
-    reasons.push("Execution Profile complete");
-  } else if (profile.workingDays.length > 0) {
-    score += 20;
-    reasons.push("Execution Profile partially complete");
-  } else {
-    reasons.push("Execution Profile incomplete");
+  const profileSignals = [
+    profile.workingDays.length > 0,
+    profile.workStartTime !== "09:00" || profile.workEndTime !== "18:00",
+    profile.productiveHours > 0,
+    profile.deepWorkWindow !== undefined,
+    profile.energyProfileType !== undefined,
+    profile.calendarConnected,
+    profile.profileComplete,
+  ];
+  const profileScore = profileSignals.filter(Boolean).length / profileSignals.length;
+  score += Math.round(profileScore * 35);
+  reasons.push(
+    profile.profileComplete
+      ? "Execution profile is complete"
+      : "Execution profile is partially configured"
+  );
+  reasons.push(
+    profile.workingDays.length > 0
+      ? `${profile.workingDays.length} working day${profile.workingDays.length === 1 ? "" : "s"} defined`
+      : "Working days are not configured"
+  );
+
+  const taskSignal = tasks.length === 0 ? 0 : tasks.length < 3 ? 0.35 : tasks.length < 8 ? 0.7 : 1;
+  score += Math.round(taskSignal * 25);
+  reasons.push(
+    tasks.length > 0
+      ? `${tasks.length} commitment${tasks.length === 1 ? "" : "s"} loaded`
+      : "No commitments yet"
+  );
+  const completedTaskCount = tasks.filter((task) => task.completedHours >= task.estimatedHours).length;
+  const executionProgress = tasks.length > 0 ? tasks.reduce((sum, task) => sum + (task.completedHours / Math.max(task.estimatedHours, 1)), 0) / tasks.length : 0;
+  if (completedTaskCount > 0) {
+    reasons.push(`${completedTaskCount} commitment${completedTaskCount === 1 ? "" : "s"} already completed`);
+  }
+  if (executionProgress > 0) {
+    score += Math.round(clamp(executionProgress, 0, 1) * 15);
+    reasons.push(`${Math.round(executionProgress * 100)}% average task progress`);
   }
 
-  // Task data (up to 30 points)
-  if (tasks.length >= 10) {
-    score += 30;
-    reasons.push(`${tasks.length} commitments loaded`);
-  } else if (tasks.length >= 5) {
-    score += 20;
-    reasons.push(`${tasks.length} commitments loaded`);
-  } else if (tasks.length > 0) {
-    score += 10;
-    reasons.push(`${tasks.length} commitments loaded`);
-  } else {
-    reasons.push("No commitments yet");
-  }
-
-  // Calendar integration (up to 15 points)
+  // Calendar integration and history add confidence only when present.
   if (hasCalendar) {
-    score += 15;
+    score += 10;
     reasons.push("Calendar connected");
   } else {
     reasons.push("Calendar not connected");
   }
 
-  // Historical data (up to 15 points)
-  if (taskHistoryDays >= 30) {
-    score += 15;
-    reasons.push(`${taskHistoryDays} days of historical data`);
-  } else if (taskHistoryDays >= 14) {
-    score += 10;
-    reasons.push(`${taskHistoryDays} days of historical data`);
-  } else if (taskHistoryDays >= 7) {
-    score += 5;
-    reasons.push(`${taskHistoryDays} days of historical data`);
-  } else if (taskHistoryDays > 0) {
-    reasons.push(`${taskHistoryDays} days of historical data`);
+  if (taskHistoryDays > 0) {
+    const historyScore = taskHistoryDays >= 30 ? 15 : taskHistoryDays >= 14 ? 10 : taskHistoryDays >= 7 ? 6 : 3;
+    score += historyScore;
+    reasons.push(`${taskHistoryDays} day${taskHistoryDays === 1 ? "" : "s"} of execution history`);
   } else {
-    reasons.push("No historical data yet");
+    reasons.push("No execution history yet");
+  }
+
+  const executionVelocity = tasks.length > 0 ? tasks.reduce((sum, task) => sum + task.completedHours, 0) / Math.max(taskHistoryDays || 7, 7) : 0;
+  if (executionVelocity > 0) {
+    score += executionVelocity >= 2 ? 10 : executionVelocity >= 1 ? 6 : 3;
+    reasons.push(`Execution velocity is ${executionVelocity.toFixed(1)}h/day`);
+  } else {
+    reasons.push("Execution velocity is not yet established");
+  }
+
+  if (taskHistoryDays >= 30) {
+    reasons.push("Enough history to compare execution patterns");
   }
 
   score = Math.min(100, Math.max(0, score));
@@ -333,9 +355,9 @@ export function computeCapacityAnalysis(
 
   // Burnout risk assessment
   let riskOfBurnout: "low" | "moderate" | "high" = "low";
-  if (workload.utilization > 100) {
+  if (workload.overallocated || workload.utilization >= 130) {
     riskOfBurnout = "high";
-  } else if (workload.utilization > 80) {
+  } else if (workload.utilization >= 85) {
     riskOfBurnout = "moderate";
   }
 
@@ -477,21 +499,28 @@ export function computeRescueAnalysis(
       const daysUntilDeadline = Math.max(0, Math.ceil(msUntilDeadline / 86_400_000));
       const availableBeforeDeadline = daysUntilDeadline * dailyProductive;
       const gap = Math.max(0, remainingHours - availableBeforeDeadline);
-      const failureProbability = availableBeforeDeadline > 0
-        ? Math.min(1, gap / remainingHours)
-        : 1;
+      const urgencyFactor = clamp(1 - Math.min(daysUntilDeadline, 30) / 30, 0.2, 1);
+      const workloadPressure = weeklyCapacity.productiveHours > 0 ? remainingHours / weeklyCapacity.productiveHours : 1;
+      const priorityWeight = clamp((task.priority === "critical" ? 1 : task.priority === "high" ? 0.85 : task.priority === "medium" ? 0.65 : 0.45), 0.35, 1);
+      const complexityWeight = clamp(task.complexity / 10, 0.3, 1);
+      const gapRatio = remainingHours > 0 ? clamp(gap / remainingHours, 0, 1) : 1;
+      const failureProbability = clamp(
+        (0.45 * gapRatio) + (0.2 * urgencyFactor) + (0.2 * priorityWeight) + (0.15 * complexityWeight) + (workloadPressure > 1 ? 0.1 : 0),
+        0,
+        1
+      );
 
       let recommendedAction: string;
       if (gap <= 0) {
-        recommendedAction = "On track. Continue current pace.";
+        recommendedAction = "On track. Keep the current schedule and monitor for changes.";
       } else if (gap < remainingHours * 0.3) {
-        recommendedAction = "Slight risk. Consider adding focus hours.";
+        recommendedAction = "Slight risk. Add one protected focus block before the deadline.";
       } else if (gap < remainingHours * 0.5) {
-        recommendedAction = "Moderate risk. Break task into smaller pieces and re-estimate.";
+        recommendedAction = "Moderate risk. Split the commitment and protect execution time.";
       } else if (gap < remainingHours * 0.75) {
-        recommendedAction = "High risk. Negotiate deadline extension or reduce scope.";
+        recommendedAction = "High risk. Reduce scope or renegotiate the deadline.";
       } else {
-        recommendedAction = "Critical. Escalate immediately. Consider dropping or radically rescheduling.";
+        recommendedAction = "Critical. Escalate now, cut scope, or move the deadline.";
       }
 
       return {

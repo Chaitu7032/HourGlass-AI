@@ -142,19 +142,49 @@ async function persistTaskWithRetry(
   logger: PipelineLogger
 ) {
   const attempts = 3;
+  const db = getFirebaseDb();
+  const taskDocRef = db
+    ? doc(db, COLLECTIONS.users, userId, COLLECTIONS.tasks, taskDraft.id)
+    : null;
 
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       logger("firestore_write", "attempt_started", { attempt, taskId: taskDraft.id });
+      logger("firestore_write", "create_task_dispatched", { attempt, taskId: taskDraft.id });
       const persistedTask = await withTimeout(createUserTask(userId, taskDraft), SAVE_TIMEOUT_MS, "Firestore write");
+      logger("firestore_write", "create_task_resolved", { attempt, taskId: persistedTask.id });
       logger("firestore_write", "succeeded", { attempt, taskId: persistedTask.id });
       return persistedTask;
     } catch (error) {
+      const timeoutMessage = error instanceof Error ? error.message : String(error);
       logger("firestore_write", "attempt_failed", {
         attempt,
         taskId: taskDraft.id,
-        error: error instanceof Error ? error.message : String(error),
+        error: timeoutMessage,
       });
+
+      if (timeoutMessage.includes("timed out") && taskDocRef) {
+        logger("firestore_write", "timeout_verification_started", { attempt, taskId: taskDraft.id });
+        try {
+          const snapshot = await getDoc(taskDocRef);
+          if (snapshot.exists()) {
+            const confirmedAt = new Date().toISOString();
+            logger("firestore_write", "timeout_verification_confirmed", { attempt, taskId: taskDraft.id });
+            return {
+              ...taskDraft,
+              createdAt: confirmedAt,
+              updatedAt: confirmedAt,
+            } as Task;
+          }
+          logger("firestore_write", "timeout_verification_missing", { attempt, taskId: taskDraft.id });
+        } catch (verificationError) {
+          logger("firestore_write", "timeout_verification_failed", {
+            attempt,
+            taskId: taskDraft.id,
+            error: verificationError instanceof Error ? verificationError.message : String(verificationError),
+          });
+        }
+      }
 
       if (attempt === attempts || !isRetryableFirestoreError(error)) {
         throw error;
@@ -422,7 +452,9 @@ export default function NewCommitmentPage() {
         throw new Error("Unable to construct the commitment draft.");
       }
 
+      logger("firestore_write", "await_started", { taskId: taskDraft.id });
       const confirmedTask = await persistTaskWithRetry(user.uid, taskDraft, logger);
+      logger("firestore_write", "await_finished", { taskId: confirmedTask.id });
       const committedTasks = [confirmedTask, ...previousTasks.filter((task) => task.id !== confirmedTask.id)];
       setSavedTask(confirmedTask);
       setSavedTaskSet(committedTasks);

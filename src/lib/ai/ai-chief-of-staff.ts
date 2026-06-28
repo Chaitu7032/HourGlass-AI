@@ -23,6 +23,38 @@ export interface StructuredAIResponse {
   confidence: "high" | "medium" | "low";
 }
 
+function formatChiefConfidence(orchestration: OrchestrationResult | null): "high" | "medium" | "low" {
+  if (!orchestration) return "low";
+  const evidence = [
+    orchestration.riskAssessments.length > 0,
+    orchestration.rescuePlans.length > 0,
+    orchestration.commitmentScore?.overall !== undefined,
+    orchestration.behaviorPatterns?.executionVelocity > 0,
+  ].filter(Boolean).length;
+
+  if (evidence >= 4) return "high";
+  if (evidence >= 2) return "medium";
+  return "low";
+}
+
+function buildExecutiveSections(args: {
+  assessment: string;
+  reasoning: string[];
+  recommendations: string[];
+  nextAction: string;
+  confidence: "high" | "medium" | "low";
+}) {
+  return {
+    summary: `Assessment: ${args.assessment}`,
+    topPriorities: args.recommendations.slice(0, 3),
+    riskAnalysis: args.reasoning.join(" "),
+    recommendedSchedule: args.recommendations[0] ?? args.nextAction,
+    warnings: args.reasoning.slice(0, 3),
+    nextAction: args.nextAction,
+    confidence: args.confidence,
+  };
+}
+
 export async function chatWithChiefOfStaff(
   message: string,
   userProfile: UserProfile | null,
@@ -133,46 +165,57 @@ export function generateFallbackResponse(
   const highestRisk = orchestration?.riskAssessments
     ? [...orchestration.riskAssessments].sort((a, b) => b.failureProbability - a.failureProbability)[0]
     : null;
+  const confidence = formatChiefConfidence(orchestration);
 
   if (lower.includes("rescue") || lower.includes("help")) {
-    return {
-      summary: orchestration?.rescuePlans.length
-        ? `${orchestration.rescuePlans.length} commitment(s) need immediate attention`
-        : "No active rescue plans. Add commitments to enable risk analysis.",
-      topPriorities: orchestration?.rescuePlans.slice(0, 3).map((p) => p.taskId) || [],
-      riskAnalysis: highestRisk
-        ? `Highest risk: ${highestRisk.taskTitle} at ${Math.round(highestRisk.failureProbability * 100)}%`
-        : "No risk data available",
-      recommendedSchedule: "Start with the highest-risk commitment and protect 90 minutes of focused work",
-      warnings: orchestration?.rescuePlans.map((p) => `${p.taskId} requires rescue plan`) || [],
-      nextAction: "Review rescue plans and execute the first action item",
-      confidence: "medium",
-    };
+    return buildExecutiveSections({
+      assessment: orchestration?.rescuePlans.length
+        ? `${orchestration.rescuePlans.length} commitment(s) require intervention`
+        : "No active rescue plans. The current workload appears manageable.",
+      reasoning: [
+        highestRisk
+          ? `${highestRisk.taskTitle} is the highest-risk item at ${Math.round(highestRisk.failureProbability * 100)}% failure probability.`
+          : "No task has crossed the intervention threshold.",
+        orchestration?.rescuePlans.length
+          ? `${orchestration.rescuePlans.length} rescue plan(s) are already available.`
+          : "No rescue plan evidence is present yet.",
+      ],
+      recommendations: orchestration?.rescuePlans.slice(0, 3).map((p) => p.taskId) || ["Protect the next focused work block"],
+      nextAction: orchestration?.rescuePlans[0]
+        ? "Execute the first rescue roadmap step"
+        : "Review the highest-risk commitment and confirm whether intervention is needed",
+      confidence,
+    });
   }
 
   if (lower.includes("priority") || lower.includes("what should")) {
-    return {
-      summary: `You have ${tasks.length} active commitment(s) with ${tasks.reduce((sum, t) => sum + Math.max(0, t.estimatedHours - t.completedHours), 0).toFixed(1)} hours remaining`,
-      topPriorities: highestRisk ? [highestRisk.taskTitle] : tasks.slice(0, 3).map((t) => t.title),
-      riskAnalysis: highestRisk
-        ? `${highestRisk.taskTitle} has ${Math.round(highestRisk.failureProbability * 100)}% failure probability`
-        : "No risk assessments available yet",
-      recommendedSchedule: "Focus on the highest-priority commitment during your peak energy window",
-      warnings: tasks.filter((t) => new Date(t.deadline) < new Date() && t.completedHours < t.estimatedHours).map((t) => `${t.title} is overdue`),
-      nextAction: "Complete the most critical commitment first",
-      confidence: "medium",
-    };
+    const remaining = tasks.reduce((sum, t) => sum + Math.max(0, t.estimatedHours - t.completedHours), 0);
+    return buildExecutiveSections({
+      assessment: `You have ${tasks.length} active commitment(s) and ${remaining.toFixed(1)} hours remaining.`,
+      reasoning: [
+        highestRisk
+          ? `${highestRisk.taskTitle} is currently the highest-risk item at ${Math.round(highestRisk.failureProbability * 100)}%.`
+          : "No risk assessment is available yet.",
+        `${tasks.filter((t) => new Date(t.deadline) < new Date() && t.completedHours < t.estimatedHours).length} commitment(s) are overdue or due now.`,
+      ],
+      recommendations: highestRisk ? [highestRisk.taskTitle, ...tasks.slice(0, 2).map((t) => t.title)] : tasks.slice(0, 3).map((t) => t.title),
+      nextAction: highestRisk ? `Prioritize ${highestRisk.taskTitle}` : "Start with the commitment nearest its deadline",
+      confidence,
+    });
   }
 
-  return {
-    summary: `You have ${tasks.length} active commitments. ${orchestration ? "Orchestration analysis is available." : "Run orchestration for detailed insights."}`,
-    topPriorities: tasks.slice(0, 3).map((t) => t.title),
-    riskAnalysis: highestRisk
-      ? `${highestRisk.taskTitle} at ${Math.round(highestRisk.failureProbability * 100)}% risk`
-      : "No risk data yet",
-    recommendedSchedule: "Protect focused work blocks for your highest-priority commitments",
-    warnings: [],
-    nextAction: "Add deadlines and estimated hours to enable intelligent planning",
-    confidence: "low",
-  };
+  return buildExecutiveSections({
+    assessment: `You have ${tasks.length} active commitment(s). ${orchestration ? "Shared orchestration data is available." : "No orchestration data has been computed yet."}`,
+    reasoning: [
+      highestRisk
+        ? `${highestRisk.taskTitle} is the current highest-risk commitment at ${Math.round(highestRisk.failureProbability * 100)}%.`
+        : "No risk data is available yet.",
+      orchestration
+        ? `Execution health is ${Math.round(orchestration.commitmentScore.overall)}/100.`
+        : "Execution health has not been calculated yet.",
+    ],
+    recommendations: tasks.slice(0, 3).map((t) => t.title),
+    nextAction: "Add deadlines, estimated hours, and progress data to improve planning accuracy",
+    confidence,
+  });
 }
