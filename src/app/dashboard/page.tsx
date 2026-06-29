@@ -281,10 +281,12 @@ export default function MissionControlPage() {
             {confidence && (
               <ConfidenceBadge value={confidence.value} />
             )}
-            <Button variant="outline" size="sm" onClick={handleAddTask}>
-              <Plus className="h-4 w-4" />
-              Add Commitment
-            </Button>
+            {hasTasks && (
+              <Button variant="outline" size="sm" onClick={handleAddTask}>
+                <Plus className="h-4 w-4" />
+                Add Commitment
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={() => router.push("/settings")}>
               <Settings className="h-4 w-4" />
               Profile
@@ -574,9 +576,6 @@ export default function MissionControlPage() {
               <Button className="min-w-[220px]" onClick={() => router.push("/commitments/new")}>
                 Create Your First Commitment
                 <Sparkles className="h-4 w-4" />
-              </Button>
-              <Button variant="outline" className="border-white/15 bg-white/5" onClick={handleAddTask}>
-                Add Commitment
               </Button>
             </div>
           </motion.div>

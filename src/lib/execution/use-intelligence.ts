@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useCallback } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "@/components/auth/auth-provider";
 import { useHourglassStore } from "@/lib/store/hourglass-store";
 import { getExecutionProfile, saveExecutionProfile } from "@/lib/firebase/execution-profile";
@@ -9,6 +9,7 @@ import type { ExecutionProfile } from "@/types/execution-profile";
 import type { IntelligenceReport } from "@/lib/execution/intelligence-engine";
 
 const EXECUTION_PROFILE_KEY = "hourglass:execution_profile:local";
+const EXECUTION_PROFILE_SYNC_KEY = "hourglass:execution_profile:pending_sync";
 
 function getLocalProfile(): ExecutionProfile | null {
   if (typeof window === "undefined") return null;
@@ -29,13 +30,78 @@ function setLocalProfile(profile: ExecutionProfile) {
   }
 }
 
-// ─── useExecutionProfile ──────────────────────────────────────────────────
+function getPendingSyncProfile(): ExecutionProfile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(EXECUTION_PROFILE_SYNC_KEY);
+    return raw ? (JSON.parse(raw) as ExecutionProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setPendingSyncProfile(profile: ExecutionProfile) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(EXECUTION_PROFILE_SYNC_KEY, JSON.stringify(profile));
+  } catch {
+    // Best-effort cache only
+  }
+}
+
+function clearPendingSyncProfile() {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(EXECUTION_PROFILE_SYNC_KEY);
+  } catch {
+    // Best-effort cache only
+  }
+}
+
 export function useExecutionProfile() {
   const { user } = useAuth();
   const userId = user?.uid;
 
+  const flushPendingSync = useCallback(async (): Promise<void> => {
+    if (!userId) return;
+
+    const pendingProfile = getPendingSyncProfile();
+    if (!pendingProfile) return;
+
+    try {
+      await saveExecutionProfile(userId, pendingProfile);
+      clearPendingSyncProfile();
+      setLocalProfile(pendingProfile);
+    } catch {
+      // Keep the pending sync queued for a later retry.
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    void flushPendingSync();
+
+    const handleOnline = () => {
+      void flushPendingSync();
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+    };
+  }, [flushPendingSync, userId]);
+
   const loadProfile = useCallback(async (): Promise<ExecutionProfile | null> => {
     if (!userId) return null;
+
+    const pendingProfile = getPendingSyncProfile();
+    if (pendingProfile) {
+      setLocalProfile(pendingProfile);
+      void flushPendingSync();
+      return pendingProfile;
+    }
+
     try {
       const profile = await getExecutionProfile(userId);
       setLocalProfile(profile);
@@ -43,30 +109,22 @@ export function useExecutionProfile() {
     } catch {
       return getLocalProfile();
     }
-  }, [userId]);
+  }, [flushPendingSync, userId]);
 
   const updateProfile = useCallback(
     async (profile: ExecutionProfile): Promise<void> => {
       if (!userId) throw new Error("Not authenticated");
 
-      // 1. Snapshot current local state for rollback
-      const previousProfile = getLocalProfile();
-
-      // 2. Optimistic update — write immediately so UI reflects changes
+      // Commit locally first so navigation can continue immediately and
+      // downstream pages can render from durable local state.
       setLocalProfile(profile);
+      setPendingSyncProfile(profile);
 
-      try {
-        // 3. Persist to Firestore
-        await saveExecutionProfile(userId, profile);
-      } catch (saveError) {
-        // 4. Rollback on failure
-        if (previousProfile) {
-          setLocalProfile(previousProfile);
-        }
-        throw saveError; // Re-raise so callers can show error messages
-      }
+      // Firestore persistence is still attempted, but it does not block the
+      // UI when the browser blocks firebase requests.
+      void flushPendingSync();
     },
-    [userId]
+    [flushPendingSync, userId]
   );
 
   return {
@@ -76,7 +134,6 @@ export function useExecutionProfile() {
   };
 }
 
-// ─── useIntelligence ──────────────────────────────────────────────────────
 export function useIntelligence(): {
   report: IntelligenceReport | null;
   executionProfile: ExecutionProfile | null;
@@ -95,7 +152,7 @@ export function useIntelligence(): {
       executionProfile,
       tasks,
       executionProfile.calendarConnected,
-      0 // No historical data tracked yet
+      0
     );
   }, [executionProfile, tasks]);
 
@@ -103,11 +160,18 @@ export function useIntelligence(): {
 
   const refresh = async () => {
     if (!userId) return;
+
+    const pendingProfile = getPendingSyncProfile();
+    if (pendingProfile) {
+      setLocalProfile(pendingProfile);
+      return;
+    }
+
     try {
       const profile = await getExecutionProfile(userId);
       setLocalProfile(profile);
     } catch {
-      // Silent fail — cached value remains
+      // Silent fail. Cached value remains.
     }
   };
 

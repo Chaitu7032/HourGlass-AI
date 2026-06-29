@@ -158,14 +158,15 @@ function deriveAuthStatus(
   user: User | null,
   profile: UserProfile | null,
   profileStatus: "idle" | "loading" | "ready" | "error",
+  sessionExpired: boolean,
   initialized: boolean,
   signingOut: boolean,
 ): AuthStatus {
   if (!firebaseConfigured || !initialized) return "Initializing";
   if (signingOut) return "SigningOut";
   if (!user) return "Unauthenticated";
+  if (sessionExpired) return "ExpiredSession";
   if (profileStatus === "loading") return "Authenticated";
-  if (profileStatus === "error") return "ExpiredSession";
   if (profile && !profile.onboardingComplete) return "ProfileIncomplete";
   if (profile && profile.onboardingComplete) return "Ready";
   return "Authenticated";
@@ -180,6 +181,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [initialized, setInitialized] = useState(!firebaseConfigured);
   const [profileStatus, setProfileStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [signingOut, setSigningOut] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [error, setError] = useState<string | null>(
     firebaseConfigured ? null : "Firebase is not configured. Add your public Firebase environment variables."
   );
@@ -192,6 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     profile,
     profileStatus,
+    sessionExpired,
     initialized,
     signingOut,
   );
@@ -202,9 +205,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       await currentUserRef.current.getIdToken(/* forceRefresh */ true);
       await syncSessionCookie(currentUserRef.current);
+      setSessionExpired(false);
     } catch {
       // If token refresh fails, mark session as expired
-      setProfileStatus("error");
+      setSessionExpired(true);
     }
   }, []);
 
@@ -253,6 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onIdTokenChanged(auth, async (nextUser) => {
       setLoading(true);
       setError(null);
+      setSessionExpired(false);
       const previousUserId = currentUserRef.current?.uid ?? null;
       currentUserRef.current = nextUser;
 
@@ -268,6 +273,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           clearProfileCache();
           setProfile(null);
           setProfileStatus("idle");
+          setSessionExpired(false);
           resetWorkspaceState();
           setLoading(false);
           setInitialized(true);
@@ -291,6 +297,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setProfileStatus("ready");
             })
             .catch((profileError) => {
+              setProfile((currentProfile) => currentProfile ?? fallbackProfile);
+              cacheProfile(fallbackProfile);
+              setProfileStatus("ready");
               setError(getReadableError(profileError));
             });
 
@@ -324,7 +333,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (profileError) {
           setProfile(fallbackProfile);
           cacheProfile(fallbackProfile);
-          setProfileStatus("error");
+          setProfileStatus("ready");
           setError(getReadableError(profileError));
         }
       } catch (nextError) {
@@ -334,7 +343,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(fallbackProfile);
         if (fallbackProfile) {
           cacheProfile(fallbackProfile);
-          setProfileStatus("error");
+          setProfileStatus("ready");
         } else {
           setProfileStatus("idle");
         }
@@ -356,11 +365,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(nextProfile);
       setProfileStatus("ready");
       cacheProfile(nextProfile);
+      setSessionExpired(false);
     } catch (refreshError) {
       const fallbackProfile = readCachedProfile(user) ?? profile ?? buildFallbackProfile(user);
       setProfile(fallbackProfile);
       cacheProfile(fallbackProfile);
-      setProfileStatus("error");
+      setProfileStatus("ready");
       setError(getReadableError(refreshError));
     }
   };
@@ -398,6 +408,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
     setProfile(nextProfile as UserProfile);
     setProfileStatus("ready");
+    setSessionExpired(false);
     cacheProfile(nextProfile as UserProfile);
   };
 
@@ -418,6 +429,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearProfileCache(user?.uid);
       setProfile(null);
       setProfileStatus("idle");
+      setSessionExpired(false);
       resetWorkspaceState();
       await syncSessionCookie(null);
     } finally {
@@ -461,8 +473,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await refreshProfile();
     } catch (writeError) {
       setError(getReadableError(writeError));
-      setProfileStatus("error");
-      throw writeError;
+      // Keep the optimistic profile so onboarding can continue even if Firestore
+      // is blocked or temporarily unavailable. A later refresh can reconcile it.
     }
 
     if (user.displayName !== displayName) {

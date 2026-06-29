@@ -31,13 +31,17 @@ export default function OnboardingPage() {
       // Check if execution profile is already set
       import("@/lib/firebase/execution-profile").then(({ getExecutionProfile }) => {
         if (!user?.uid) return;
-        getExecutionProfile(user.uid).then((ep) => {
-          if (ep.profileComplete) {
-            router.replace("/dashboard");
-          } else {
+        getExecutionProfile(user.uid)
+          .then((ep) => {
+            if (ep.profileComplete) {
+              router.replace("/dashboard");
+            } else {
+              setStep("execution-profile");
+            }
+          })
+          .catch(() => {
             setStep("execution-profile");
-          }
-        });
+          });
       });
     }
   }, [profile, router, user?.uid]);
