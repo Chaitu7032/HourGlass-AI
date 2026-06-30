@@ -14,9 +14,15 @@ export default function VoicePage() {
   const [speaking, setSpeaking] = useState(false);
   const [transcript, setTranscript] = useState("");
 
-  const speak = (text: string) => {
+  const stopSpeaking = () => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
+    setSpeaking(false);
+  };
+
+  const speak = (text: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    stopSpeaking();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
     utterance.pitch = 1;
@@ -29,7 +35,16 @@ export default function VoicePage() {
     if (voiceEnabled && orchestration?.voiceCoachMessage) {
       speak(orchestration.voiceCoachMessage);
     }
+    if (!voiceEnabled) {
+      stopSpeaking();
+    }
   }, [voiceEnabled, orchestration?.voiceCoachMessage]);
+
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
+  }, []);
 
   const startListening = () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -113,13 +128,18 @@ export default function VoicePage() {
             <Button
               variant={voiceEnabled || speaking ? "default" : "outline"}
               onClick={() => {
-                setVoiceEnabled(!voiceEnabled);
-                if (orchestration?.voiceCoachMessage) speak(orchestration.voiceCoachMessage);
+                if (speaking || voiceEnabled) {
+                  setVoiceEnabled(false);
+                  stopSpeaking();
+                  return;
+                }
+
+                setVoiceEnabled(true);
               }}
               disabled={!orchestration?.voiceCoachMessage}
             >
               <Volume2 className="h-4 w-4" />
-              {speaking ? "Speaking..." : "Play Briefing"}
+              {speaking || voiceEnabled ? "Stop Briefing" : "Play Briefing"}
             </Button>
             <Button variant="outline" onClick={startListening}>
               <Mic className="h-4 w-4" />
